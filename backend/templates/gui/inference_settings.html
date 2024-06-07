@@ -1,0 +1,127 @@
+{% extends './base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <form action="." method="post" class="my-4">
+        {% csrf_token %}
+        <div class="form-container">
+          {{ form.as_p }}
+          <div class="text-center">
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </div>
+          {% if messages %}
+          <ul class="messages">
+              {% for message in messages %}
+              <li  {% if message.tags %} class=" {{ message.tags }} " {% endif %}> {{ message }} </li>
+              {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add the 'Projects' button -->
+<div class="position-absolute top-0 end-0 m-4">
+  <button type="button" class="btn btn-primary" onclick="window.location.href='/projects/'">Annotation</button>
+  <button type="button" class="btn btn-primary ms-2" onclick="window.location.href='/'">Home</button>
+</div>
+
+<style>
+  /* Set the background image and adjust opacity */
+  body {
+    background-image: url("{% static 'frontend/assets/fg.png' %}");
+    background-size: cover; /* Adjust the size (percentage) as needed */
+    background-position: center;
+    background-attachment: fixed;
+    opacity: 1; /* Adjust the opacity as needed (0.0 - 1.0) */
+    filter: alpha(opacity=80); /* For IE8 and earlier */
+  }
+
+  /* Style the form container */
+  .form-container {
+    background-color: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Style the labels */
+  label {
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
+  /* Style the file input fields */
+  input[type="file"] {
+    border: 1px solid #ccc;
+    padding: 5px;
+    width: 100%;
+  }
+
+  /* Style the select fields */
+  select.form-control {
+    width: 100%;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+  }
+
+  /* Style the form submission button */
+  button[type="submit"] {
+    background-color: #007bff;
+    color: #fff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  /* Style the form submission button on hover */
+  button[type="submit"]:hover {
+    background-color: #0056b3;
+  }
+
+.messages {
+          background-color: #e9f7ef; /* Green hue background color */
+          border: 1px solid #42b883; /* Green border color */
+          padding: 10px;
+          margin-top: 10px;
+      }
+
+      /* Styles for different message tags */
+      .error {
+          color: #ff6347; /* Red color for error messages */
+      }
+
+      .success {
+          color: #008000; /* Green color for success messages */
+  }
+
+ul {
+  list-style-type: none;
+}
+
+  /* Style the 'Projects' button */
+  .position-absolute {
+    position: absolute;
+  }
+
+  .top-0 {
+    top: 0;
+  }
+
+  .end-0 {
+    right: 0;
+  }
+
+  .m-4 {
+    margin: 1.5rem;
+  }
+
+</style>
+{% endblock content %}

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spacewalker prototype</title>
+    <style>#container {
+  position: relative;
+}
+
+#tooltip {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+}
+
+#slider {
+  cursor: ew-resize;
+  opacity: .7;
+  background-color: #52b788;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  position: absolute;
+  top: calc(50% + 500px);
+  left: calc(25% - 20px);
+}
+
+#slider-line {
+  z-index: 1;
+  background-color: #fff;
+  width: 2px;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: calc(25% - 1px);
+}
+
+#text2d {
+  color: #000;
+  text-align: center;
+  text-transform: uppercase;
+  background-color: #f2f2f2;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 20px;
+  font-weight: bold;
+  position: absolute;
+  top: calc(50% + 40px);
+  left: 5%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 4px #0000001a;
+}
+
+#text3d {
+  color: #000;
+  text-align: center;
+  text-transform: uppercase;
+  background-color: #f2f2f2;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 20px;
+  font-weight: bold;
+  position: absolute;
+  top: calc(50% + 40px);
+  left: calc(25% + 80px);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 4px #0000001a;
+}
+
+body {
+  margin: 0;
+}
+</style>
+</head>
+<body>
+    <div id="container">
+        <div id="slider"></div>
+        <div id="text2d">2D</div>
+        <div id="text3d">3D</div>
+    </div>
+    <script src="/index.e82f28a0.js" defer=""></script>
+</body>
+</html>

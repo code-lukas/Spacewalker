@@ -1,0 +1,101 @@
+services:
+  spacewalker-triton:
+    image: nvcr.io/nvidia/tritonserver:23.09-py3
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - "./model_repository:/models"
+    entrypoint: tritonserver --model-repository=/models --http-port=8000
+
+  minio:
+    image: bitnami/minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_storage:/spacewalker-projects
+    env_file:
+      - ./environments/minio.env
+    depends_on:
+      - spacewalker-triton
+    healthcheck:
+      # i suspect that this healtcheck isn't functional
+      test: [ "CMD", "curl", "-f", "http://0.0.0.0:9000/minio/health/live" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add storage http://minio:9000 demo demodemo;
+      /usr/bin/mc mb storage/spacewalker-projects;
+      /usr/bin/mc alias set storage http://minio:9000 demo demodemo;
+      /usr/bin/mc event add storage/spacewalker-projects arn:minio:sqs::DJANGO:webhook --event 'put,delete'
+      "
+
+  spacewalker-django:
+    build: .
+    ports:
+      - "8080:8080"
+    tty: true
+    depends_on:
+      db:
+        condition: service_healthy
+#      - label_studio
+    command: >
+      /bin/sh -c "
+      python manage.py makemigrations;
+      python manage.py migrate;
+      python manage.py runserver 0.0.0.0:8080
+      "
+
+  db:
+    image: postgres
+    restart: unless-stopped
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_USER=admin
+      - POSTGRES_DB=spacewalker
+    depends_on:
+      - createbuckets
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d spacewalker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+#    ports:
+#    # debug only
+#      - "5432:5432"
+    
+  label_studio:
+    image: heartexlabs/label-studio:latest
+    container_name: label_studio
+    ports:
+      - "8090:8080"
+    environment:
+      - MINIO_STORAGE_ACCESS_KEY=demo
+      - MINIO_STORAGE_SECRET_KEY=demodemo
+      - MINIO_STORAGE_BUCKET_NAME=spacewalker-projects
+      - MINIO_STORAGE_ENDPOINT=http://minio:9000
+    entrypoint: >
+      /bin/sh -c "
+      label-studio start --username django --password django --user-token django "
+    volumes:
+      - ./label-studio-data:/label-studio/data
+    depends_on:
+      - minio
+
+
+volumes:
+    minio_storage:
+    label-studio-data:

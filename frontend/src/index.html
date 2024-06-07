@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spacewalker prototype</title>
+    <style>
+        #container {
+            position: relative;
+        }
+        #tooltip {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+        }
+        #slider {
+            position: absolute;
+            cursor: ew-resize;
+            width: 40px;
+            height: 40px;
+            background-color: #52B788;
+            opacity: 0.7;
+            border-radius: 50%;
+            top: calc(50% + 500px);
+            left: calc(25% - 20px)
+        }
+        #slider-line {
+            position: absolute;
+            width: 2px;
+            height: 100%;
+            background-color: white;
+            top: 0;
+            left: calc(25% - 1px);
+            z-index: 1;
+        }
+        #text2d {
+            position: absolute;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            top: calc(50% + 40px);
+            left: calc(5%);
+            transform: translate(-50%, -50%);
+            color: #000000;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            text-transform: uppercase;
+            background-color: #f2f2f2;
+            padding: 8px 16px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        #text3d {
+            position: absolute;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            top: calc(50% + 40px);
+            left: calc(25% + 80px);
+            transform: translate(-50%, -50%);
+            color: #000000;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            text-transform: uppercase;
+            background-color: #f2f2f2;
+            padding: 8px 16px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        body {
+            margin: 0
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="slider"></div>
+        <div id="text2d">2D</div>
+        <div id="text3d">3D</div>
+    </div>
+    <script src="./js/script.js" type="module"></script>
+</body>
+</html>

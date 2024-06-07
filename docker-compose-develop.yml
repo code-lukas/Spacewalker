@@ -1,0 +1,9 @@
+services:
+  spacewalker-django:
+    volumes:
+      - ./backend:/backend
+      - ./frontend:/frontend
+      - ./manage.py:/manage.py:ro
+      - ./package.json:/package.json:ro
+      - ./package-lock.json:/package-lock.json:ro
+      - ./requirements.txt:/requirements.txt

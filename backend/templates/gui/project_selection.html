@@ -1,0 +1,175 @@
+{% extends './base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <form method="post" class="my-4" id="ProjectSelectionForm">
+        {% csrf_token %}
+        <div class="form-container">
+          <h1>Spacewalker projects</h1>
+          <label for="dropdown">Select a project:</label>
+          <select id="dropdown" name="dropdown">
+              {% for item in dropdown_items %}
+                  <option value="{{ item }}">{{ item }}</option>
+              {% endfor %}
+          </select>
+          <br><br>
+          <label for="model-dr-dropdown">Select a model - DR method:</label>
+            <select id="model-dr-dropdown" name="model-dr-dropdown"></select>
+          <br><br>
+          <div id="labels-container">
+            <!-- Existing labels will be appended here -->
+          </div>
+          <button type="button" id="add-label-btn" class="btn btn-success">Add Label</button>
+          <br><br>
+          <div class="text-center">
+            <button type="submit" class="btn btn-primary">Select</button>
+              <button type="button" class="btn btn-primary" id="Export">Export annotations</button>
+
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+  .label-container {
+    display: flex;
+    justify-content: space-between;
+  }
+  .label-container input[type="text"],
+  .label-container input[type="color"],
+  .label-container input[type="number"] {
+    width: 30%;
+  }
+</style>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    let all_labels = {{ all_labels }};
+    let combinations = {{ combinations }};
+    let selected_labels = [];
+
+    $(document).ready(function() {
+        let labelId = 0;
+
+        function displayLabels() {
+            // Retrieve the selected value of the dropdown
+            let selectedValue = $('#dropdown').val();
+            // Filter labels based on the selected value
+            selected_labels = all_labels.filter(item => item['project_association'] === selectedValue);
+            // Clear existing labels
+            $('#labels-container').empty();
+            labelId = 0;
+            // Add labels from selected_labels
+            selected_labels.forEach(function(labelData) {
+                addLabelWithData(labelData);
+            });
+        }
+
+        $('#dropdown').change(function() {
+            populateModelDRDropdown();
+            displayLabels();
+        });
+
+    function populateModelDRDropdown() {
+        let selectedProject = $('#dropdown').val();
+        let modelDRCombos = combinations[selectedProject]['combination'];
+        let modelDRDropdown = $('#model-dr-dropdown');
+        modelDRDropdown.empty();
+
+        modelDRCombos.forEach(function(combo) {
+            modelDRDropdown.append($('<option>', {
+                value: combo,
+                text: combo
+            }));
+        });
+    }
+
+        // Function to add a label with existing data
+        function addLabelWithData(labelData) {
+            let labelHtml = '<div class="form-group label-container">';
+            labelHtml += '<input type="text" class="form-control" name="label-name" placeholder="Label name" required="required" value="' + labelData.name + '">';
+            labelHtml += '<input type="color" class="form-control" name="label-color" required="required" value="' + labelData.color + '">';
+            labelHtml += '<input type="number" class="form-control" name="label-id" value="' + labelData.class_id + '" readonly>';
+            labelHtml += '<button type="button" class="btn btn-danger delete-label-btn">Delete</button>'; // Delete button
+            labelHtml += '</div>';
+
+            $('#labels-container').append(labelHtml);
+
+            labelId++;
+        }
+
+        // Add Label button click event
+        $('#add-label-btn').click(function() {
+            let randomColor= "#" + (Math.random() * 0xFFFFFF<<0).toString(16);
+            let labelHtml = '<div class="form-group label-container">';
+            labelHtml += '<input type="text" class="form-control" name="label-name" placeholder="Label name" required="required">';
+            labelHtml += '<input type="color" class="form-control" name="label-color" required="required" value="' + randomColor + '">';
+            labelHtml += '<input type="number" class="form-control" name="label-id" value="' + labelId + '" readonly>';
+            labelHtml += '<button type="button" class="btn btn-danger delete-label-btn">Delete</button>'; // Delete button
+            labelHtml += '</div>';
+
+            $('#labels-container').append(labelHtml);
+
+            labelId++;
+        });
+
+        // Delete Label button click event
+        $(document).on('click', '.delete-label-btn', function() {
+            $(this).closest('.label-container').remove();
+            labelId--;
+        });
+
+        $('#Export').click(function() {
+            let dropdownValue = $('#dropdown').val();
+            window.location.href = '/export?project=' + encodeURIComponent(dropdownValue);
+        });
+
+        displayLabels();
+        populateModelDRDropdown();
+    });
+
+    // Function to handle form submission
+    function handleFormSubmission(event) {
+        // Prevent default form submission
+        event.preventDefault();
+
+        // Get the existing form data from ProjectSelectionForm
+        const formElement = document.getElementById('ProjectSelectionForm');
+        const formData = new FormData(formElement);
+
+        // Add additional data to the formData object
+        let dropdownValue = $('#dropdown').val();
+        let combination = $('#model-dr-dropdown').val();
+        let labels = [];
+        $('.label-container').each(function() {
+            let labelName = $(this).find('[name="label-name"]').val();
+            let labelColor = $(this).find('[name="label-color"]').val();
+            let labelId = $(this).find('[name="label-id"]').val();
+            labels.push({ id: labelId, name: labelName, color: labelColor });
+        });
+        formData.append('dropdown', dropdownValue);
+        formData.append('setting', combination);
+        formData.append('labels', JSON.stringify(labels));
+
+        // Update the form data in the form element
+        for (const [key, value] of formData.entries()) {
+            const inputElement = document.createElement('input');
+            inputElement.type = 'hidden';
+            inputElement.name = key;
+            inputElement.value = value;
+            formElement.appendChild(inputElement);
+        }
+
+        // Submit the form
+        formElement.submit();
+    }
+
+    // Add event listener for form submission
+    document.getElementById('ProjectSelectionForm').addEventListener('submit', handleFormSubmission);
+</script>
+{%  endblock content %}
