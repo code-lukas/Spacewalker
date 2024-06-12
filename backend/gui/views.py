@@ -17,18 +17,32 @@ from queue import Queue
 from typing import Any
 
 from cv2 import imread, imwrite, COLOR_BGR2RGB, COLOR_GRAY2RGB, cvtColor, resize
+from minio.select import CSVInputSerialization, CSVOutputSerialization, SelectRequest
 from .models import DataPoint, AnnotationColorDescription
 import multiprocessing as mp
 from numpy import float32, moveaxis, pad, uint8
 from sklearn.manifold import TSNE, MDS, Isomap
 from sklearn.decomposition import PCA
-from ..services.triton_inference import triton_inference
+from ..services.triton_inference import triton_inference, triton_inference_text
 from ..services.minio_interface import MinioClient
 from .forms import ConfigurationForm, InferenceSettingsForm
 
 MAX_PROCESSES = 10
 IMAGENET_MEANS = np.array([0.485, 0.456, 0.406])
 IMAGENET_STDS = np.array([0.229, 0.224, 0.225])
+
+size_lut = {
+    'vit': 1024,
+    'resnet50': 224,
+    'vgg16': 224,
+    'dinov2': 224,
+}
+triton_name_lut = {
+    'vit': 'vit_b_onnx',
+    'resnet50': 'resnet_50_onnx',
+    'vgg16': 'vgg_16_onnx',
+    'dinov2': 'dinov2_vitb14_onnx',
+}
 
 
 def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
@@ -133,7 +147,7 @@ class configurationView(Connector, TemplateView):
                 )
             messages.success(request, 'Submission successful!')
         else:
-            messages.error(request, 'Submission unsuccessful!')
+            messages.error(request, 'Submission unsuccessful! - Please check the file types')
         return HttpResponseRedirect(request.path_info)
 
 
@@ -168,77 +182,99 @@ class InferenceSettingsView(Connector, TemplateView):
         )
 
     def inference(self, project: str, model: str, dr_method: str) -> None:
-        size_lut = {
-            'vit': 1024,
-            'resnet50': 224,
-            'vgg16': 224,
-            'dinov2': 224,
-        }
-        triton_name_lut = {
-            'vit': 'vit_b_onnx',
-            'resnet50': 'resnet_50_onnx',
-            'vgg16': 'vgg_16_onnx',
-            'dinov2': 'dinov2_vitb14_onnx',
-        }
         file_gen = self.minio_client.client.list_objects(
             bucket_name='spacewalker-projects',
             prefix=f'{project}/raw',
             recursive=True
         )
         files = [f.object_name for f in file_gen]
-        for file in files:
-            with NamedTemporaryFile(mode='wb', suffix='.png') as temporary_image:
-                self.minio_client.client.fget_object(
-                    bucket_name='spacewalker-projects',
-                    object_name=file,
-                    file_path=temporary_image.name
-                )
-                # I should consider building this into a proper dataloader
-                image = imread(temporary_image.name)
-                if image.ndim == 3:
-                    # image = cvtColor(image, COLOR_BGR2RGB)
-                    pass
-                else:
-                    image = cvtColor(image, COLOR_GRAY2RGB)
-                h = image.shape[0]
-                w = image.shape[1]
-                width = height = size_lut[model.lower()]
 
-                if h > height or w > width:
-                    image = resize(image, (width, height)).astype(uint8)
-                else:
-                    a = (width - h) // 2
-                    aa = width - a - h
+        # Distinguish between text, image and video
+        file_type = files[0].split('.')[-1].lower()
 
-                    b = (height - w) // 2
-                    bb = height - b - w
+        match file_type:
+            case 'png' | 'jpg' | 'jpeg':
+                for file in files:
+                    with NamedTemporaryFile(mode='wb', suffix='.png') as temporary_image:
+                        self.minio_client.client.fget_object(
+                            bucket_name='spacewalker-projects',
+                            object_name=file,
+                            file_path=temporary_image.name
+                        )
+                        # I should consider building this into a proper dataloader
+                        image = imread(temporary_image.name)
+                        if image.ndim == 3:
+                            # image = cvtColor(image, COLOR_BGR2RGB)
+                            pass
+                        else:
+                            image = cvtColor(image, COLOR_GRAY2RGB)
+                        h = image.shape[0]
+                        w = image.shape[1]
+                        width = height = size_lut[model.lower()]
 
-                    image = pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(uint8)
+                        if h > height or w > width:
+                            image = resize(image, (width, height)).astype(uint8)
+                        else:
+                            a = (width - h) // 2
+                            aa = width - a - h
 
-                # scaling
-                image -= image.min(axis=(0, 1), keepdims=True)
-                image = image.astype(float32)
-                image /= image.max(axis=(0, 1), keepdims=True)
+                            b = (height - w) // 2
+                            bb = height - b - w
 
-                # imagenet normalization
-                image = (image - IMAGENET_MEANS) / IMAGENET_STDS
+                            image = pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(uint8)
 
-                image = moveaxis(image, [0, 1, 2], [1, 2, 0])
-                # images need to be padded to fit vit input shape
-                result = triton_inference(
-                    image_data=image.astype(float32),
-                    model_name=triton_name_lut[model.lower()]
-                )
-                with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
-                    np.save(npy_temp.name, result)
-                    new_fn = file.split('/')[-1].split('.')[0] + '.upload.npy'
-                    self.minio_client.send_to_bucket(
+                        # scaling
+                        image -= image.min(axis=(0, 1), keepdims=True)
+                        image = image.astype(float32)
+                        image /= image.max(axis=(0, 1), keepdims=True)
+
+                        # imagenet normalization
+                        image = (image - IMAGENET_MEANS) / IMAGENET_STDS
+
+                        image = moveaxis(image, [0, 1, 2], [1, 2, 0])
+                        # images need to be padded to fit vit input shape
+                        result = triton_inference(
+                            image_data=image.astype(float32),
+                            model_name=triton_name_lut[model.lower()]
+                        )
+                        with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
+                            np.save(npy_temp.name, result)
+                            new_fn = file.split('/')[-1].split('.')[0] + '.upload.npy'
+                            self.minio_client.send_to_bucket(
+                                bucket_name='spacewalker-projects',
+                                file=npy_temp.name,
+                                directory=f'{project}/npy',
+                                name_on_storage=new_fn
+                            )
+            case 'csv':
+                master_file = files[0]
+                with self.minio_client.client.select_object_content(
                         bucket_name='spacewalker-projects',
-                        file=npy_temp.name,
-                        directory=f'{project}/npy',
-                        name_on_storage=new_fn
-
-                    )
+                        object_name=master_file,
+                        request=SelectRequest(
+                            "select * from S3Object",
+                            CSVInputSerialization(),
+                            CSVOutputSerialization(),
+                            request_progress=True)) as result:
+                    for data in result.stream():
+                        lines = data.split(b'\n')
+                        for line in lines:
+                            text_id, text = line.decode().split(',', 1)
+                            result = triton_inference_text(
+                                text=text,
+                                model_name='MiniLM_ensemble'
+                            )
+                            with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
+                                np.save(npy_temp.name, result)
+                                new_fn = f'{text_id}.upload.npy'
+                                self.minio_client.send_to_bucket(
+                                    bucket_name='spacewalker-projects',
+                                    file=npy_temp.name,
+                                    directory=f'{project}/npy',
+                                    name_on_storage=new_fn
+                                )
+            case 'mp3' | 'mp4':
+                raise NotADirectoryError
         self.start_dr(project=project, model=model.lower(), dr_method=dr_method)
 
     def start_dr(self, project: str, model: str, dr_method: str) -> None:
