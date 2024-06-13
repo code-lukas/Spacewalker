@@ -698,7 +698,7 @@ function updateTooltip() {
 }
 function showTooltip(mouse_position, instanceId) {
     let datapoint = data3d[instanceId];
-    let thumbnail_path = datapoint["thumbnail_reference"];
+    let thumbnail_path = datapoint["preview"];
 
     if (hoverId !== instanceId) {
         hoverId = instanceId;

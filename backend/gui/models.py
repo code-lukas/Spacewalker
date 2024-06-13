@@ -15,7 +15,8 @@ class DataPoint(models.Model):
     class_name = models.CharField(max_length=50)
     cluster_id = models.BigIntegerField()
     file_reference = models.CharField()
-    thumbnail_reference = models.CharField()
+    preview = models.CharField()
+    modality = models.CharField()
 
     @classmethod
     def create(cls,
@@ -28,8 +29,9 @@ class DataPoint(models.Model):
                class_name: str | None,
                cluster_id: int,
                file_reference: str,
-               thumbnail_reference: str,
-               is3d: bool
+               preview: str,
+               is3d: bool,
+               modality: str,
                ):
         datapoint = cls(
             x=x,
@@ -41,8 +43,9 @@ class DataPoint(models.Model):
             class_name=class_name,
             cluster_id=cluster_id,
             file_reference=file_reference,
-            thumbnail_reference=thumbnail_reference,
-            is3d=is3d
+            preview=preview,
+            is3d=is3d,
+            modality=modality,
         )
         return datapoint
 
