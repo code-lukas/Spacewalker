@@ -45,6 +45,7 @@ triton_name_lut = {
     'resnet50': 'resnet_50_onnx',
     'vgg16': 'vgg_16_onnx',
     'dinov2': 'dinov2_vitb14_onnx',
+    'MiniLM_L6_v2': 'MiniLM_ensemble',
 }
 
 

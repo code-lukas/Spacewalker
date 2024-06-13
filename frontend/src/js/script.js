@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Pane } from 'tweakpane';
 
+console.log('Hello from debug');
+
 // Storage
 const Minio = require('minio');
 let minioClient = new Minio.Client({
@@ -74,17 +76,25 @@ let progressField;
 let classparams;
 // tooltip
 let tooltip_template = document.createRange().createContextualFragment(`
-<div id="tooltip" class="noselect" style="display: none; position: absolute; pointer-events: none; font-size: 14px; width: 300px; text-align: left; padding: 12px; background: #f8f8f8; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); font-family: 'Arial', sans-serif; border-radius: 8px;">
-  <div id="point_tip" style="font-weight: bold; margin-bottom: 8px;"></div>
-  <div id="group_tip" style="padding: 4px;">
-      <img id="tooltipImage" style="width: 100%; height: auto; border-radius: 4px;" src="" alt="Thumbnail">
-  </div>
-</div>`);
-document.body.append(tooltip_template);
+    <div id="tooltip" class="noselect" style="display: none; position: absolute; pointer-events: auto; font-size: 14px; width: 300px; text-align: left; padding: 12px; background: #f8f8f8; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); font-family: 'Arial', sans-serif; border-radius: 8px;">
+      <div id="point_tip" style="font-weight: bold; margin-bottom: 8px;"></div>
+      <div id="group_tip" style="padding: 4px;">
+          <img id="tooltipImage" style="width: 100%; height: auto; border-radius: 4px; display: none;" src="" alt="Thumbnail">
+          <div id="tooltipText" style="display: none; max-height: 150px; overflow-y: auto;"></div>
+      </div>
+    </div>`);
+document.body.appendChild(tooltip_template);
+    
+    
 let tooltip_state = { display: "none" }
 let $tooltip = document.querySelector('#tooltip');
 let $point_tip = document.querySelector('#point_tip');
 let tooltipImage = document.getElementById('tooltipImage');
+
+$tooltip.addEventListener('wheel', function(event) {
+    event.preventDefault();
+    event.stopPropagation();
+}, { passive: false });
 
 let maxCoordinate = 0;
 // find largest point
@@ -694,34 +704,41 @@ function updateTooltip() {
     $tooltip.style.left = tooltip_state.left + 'px';
     $tooltip.style.top = tooltip_state.top + 'px';
     $point_tip.innerText = tooltip_state.name;
-    $point_tip.style.background = 0xffffff;
+
+    if (tooltip_state.type === 'image') {
+        tooltipImage.src = tooltip_state.content;
+        tooltipImage.style.display = 'block';
+        tooltipText.style.display = 'none';
+    } else if (tooltip_state.type === 'text') {
+        tooltipText.innerText = tooltip_state.content;
+        tooltipText.style.display = 'block';
+        tooltipImage.style.display = 'none';
+    }
 }
+
 function showTooltip(mouse_position, instanceId) {
     let datapoint = data3d[instanceId];
-    let thumbnail_path = datapoint["preview"];
+    let file_path = datapoint["preview"];
 
     if (hoverId !== instanceId) {
         hoverId = instanceId;
 
-        loadMinioImage(minioBucket, thumbnail_path)
-            .then((objectUrl) => {
+        loadMinioData(minioBucket, file_path)
+            .then((result) => {
                 tooltip_state.display = "block";
                 tooltip_state.name = "Showing Object " + instanceId;
+                tooltip_state.content = result.content;
+                tooltip_state.type = result.type;
 
-                // Set the image source in the tooltip
-                tooltipImage.src = objectUrl;
-
-                // Show the tooltip
                 updateTooltip();
             })
             .catch((error) => {
-                // Handle errors
-                console.error('Error loading Minio image:', error);
+                console.error('Error loading Minio data:', error);
             });
     }
 }
 
-function loadMinioImage(bucketName, objectName) {
+function loadMinioData(bucketName, objectName) {
     return new Promise((resolve, reject) => {
         minioClient.getObject(bucketName, objectName, function (err, dataStream) {
             if (err) {
@@ -733,18 +750,22 @@ function loadMinioImage(bucketName, objectName) {
             let chunks = [];
 
             dataStream.on('data', function (chunk) {
-                // Collect chunks of data
                 chunks.push(chunk);
             });
 
             dataStream.on('end', function () {
-                // Combine the chunks and create a Data URL for the image
-                let imageData = Buffer.concat(chunks);
-                let base64Image = imageData.toString('base64');
-                let dataUrl = 'data:image/png;base64,' + base64Image;
+                let fileData = Buffer.concat(chunks);
 
-                // Resolve the promise with the Data URL
-                resolve(dataUrl);
+                if (objectName.endsWith('.png') || objectName.endsWith('.jpg') || objectName.endsWith('.jpeg')) {
+                    let base64Image = fileData.toString('base64');
+                    let dataUrl = 'data:image/png;base64,' + base64Image;
+                    resolve({ type: 'image', content: dataUrl });
+                } else if (objectName.endsWith('.txt')) {
+                    let textContent = fileData.toString('utf8');
+                    resolve({ type: 'text', content: textContent });
+                } else {
+                    reject(new Error('Unsupported file type'));
+                }
             });
 
             dataStream.on('error', function (err) {

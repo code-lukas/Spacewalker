@@ -8,6 +8,7 @@ MODEL_CHOICES = [
     ('VGG16', 'VGG-16'),
     ('ViT', 'ViT'),
     ('DINOV2', 'DINOV2'),
+    ('MiniLM_L6_v2', 'MiniLM_L6_v2'),
 ]
 DR_METHODS = [
     ('HNNE', 'HNNE'),
