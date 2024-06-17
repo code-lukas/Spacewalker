@@ -23,7 +23,7 @@ services:
     depends_on:
       - spacewalker-triton
     healthcheck:
-      # i suspect that this healtcheck isn't functional
+      # i suspect that this healthcheck isn't functional
       test: [ "CMD", "curl", "-f", "http://0.0.0.0:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s

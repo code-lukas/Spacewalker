@@ -18,7 +18,7 @@ from threading import Thread
 from queue import Queue
 from typing import Any
 
-from cv2 import imread, imwrite, COLOR_BGR2RGB, COLOR_GRAY2RGB, cvtColor, resize
+from cv2 import imread, imwrite, COLOR_BGR2RGB, COLOR_GRAY2RGB, cvtColor, resize, INTER_CUBIC
 from minio.select import CSVInputSerialization, CSVOutputSerialization, SelectRequest
 from .models import DataPoint, AnnotationColorDescription
 import multiprocessing as mp
@@ -57,7 +57,7 @@ def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
     else:
         new_h = int((longest_edge / w) * h)
         new_w = longest_edge
-    return resize(img, (new_h, new_w))
+    return resize(img, (new_h, new_w), interpolation=INTER_CUBIC)
 
 
 # Create your views here.
@@ -106,6 +106,8 @@ class guiView(TemplateView):
 
     @method_decorator(requires_csrf_token)
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+
+
         three_js_data = json.loads(request.body)
         with mp.Pool(MAX_PROCESSES) as pool:
             pool.map(self.update_datapoint, iterable=three_js_data)
@@ -228,7 +230,7 @@ class InferenceSettingsView(Connector, TemplateView):
                         width = height = size_lut[model.lower()]
 
                         if h > height or w > width:
-                            image = resize(image, (width, height)).astype(np.uint8)
+                            image = resize(image, (width, height), interpolation=INTER_CUBIC).astype(np.uint8)
                         else:
                             a = (width - h) // 2
                             aa = width - a - h
