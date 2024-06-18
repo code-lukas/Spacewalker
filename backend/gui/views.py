@@ -18,8 +18,8 @@ from threading import Thread
 from queue import Queue
 from typing import Any
 
-from cv2 import imread, imwrite, COLOR_BGR2RGB, COLOR_GRAY2RGB, cvtColor, resize, INTER_CUBIC
-from minio.select import CSVInputSerialization, CSVOutputSerialization, SelectRequest
+import cv2 as cv
+# from minio.select import CSVInputSerialization, CSVOutputSerialization, SelectRequest
 from .models import DataPoint, AnnotationColorDescription
 import multiprocessing as mp
 from sklearn.manifold import TSNE, MDS, Isomap
@@ -31,6 +31,7 @@ from .forms import ConfigurationForm, InferenceSettingsForm
 import logging
 
 MAX_PROCESSES = 10
+SAMPLE_N_FRAMES_VIDEO = 10
 IMAGENET_MEANS = np.array([0.485, 0.456, 0.406])
 IMAGENET_STDS = np.array([0.229, 0.224, 0.225])
 
@@ -57,7 +58,7 @@ def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
     else:
         new_h = int((longest_edge / w) * h)
         new_w = longest_edge
-    return resize(img, (new_h, new_w), interpolation=INTER_CUBIC)
+    return cv.resize(img, (new_h, new_w), interpolation=cv.INTER_CUBIC)
 
 
 # Create your views here.
@@ -219,18 +220,18 @@ class InferenceSettingsView(Connector, TemplateView):
                             file_path=temporary_image.name
                         )
                         # I should consider building this into a proper dataloader
-                        image = imread(temporary_image.name)
+                        image = cv.imread(temporary_image.name)
                         if image.ndim == 3:
-                            # image = cvtColor(image, COLOR_BGR2RGB)
+                            # image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
                             pass
                         else:
-                            image = cvtColor(image, COLOR_GRAY2RGB)
+                            image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
                         h = image.shape[0]
                         w = image.shape[1]
                         width = height = size_lut[model.lower()]
 
                         if h > height or w > width:
-                            image = resize(image, (width, height), interpolation=INTER_CUBIC).astype(np.uint8)
+                            image = cv.resize(image, (width, height), interpolation=cv.INTER_CUBIC).astype(np.uint8)
                         else:
                             a = (width - h) // 2
                             aa = width - a - h
@@ -307,8 +308,66 @@ class InferenceSettingsView(Connector, TemplateView):
                                 name_on_storage=new_fn
                             )
             case 'mp3' | 'mp4':
-                raise NotADirectoryError
-        self.start_dr(project=project, model=model.lower(), dr_method=dr_method, modality=modality)
+                modality = 'video'
+                for file in files:
+                    framestack = []
+                    with NamedTemporaryFile(mode='wb', suffix='.mp4') as temporary_video:
+                        self.minio_client.client.fget_object(
+                            bucket_name='spacewalker-projects',
+                            object_name=file,
+                            file_path=temporary_video.name
+                        )
+                        # get frames to build batch
+                        video = cv.VideoCapture(temporary_video.name)
+                        frame_count = video.get(cv.CAP_PROP_FRAME_COUNT)
+                        equidistant_frame_indices = np.arange(0, frame_count, frame_count/SAMPLE_N_FRAMES_VIDEO)\
+                            .astype(int)
+                        for frame in equidistant_frame_indices:
+                            video.set(cv.CAP_PROP_POS_FRAMES, frame)
+                            ret, image = video.read()
+
+                            h = image.shape[0]
+                            w = image.shape[1]
+                            width = height = size_lut[model.lower()]
+
+                            if h > height or w > width:
+                                image = cv.resize(image, (width, height), interpolation=cv.INTER_CUBIC).astype(np.uint8)
+                            else:
+                                a = (width - h) // 2
+                                aa = width - a - h
+
+                                b = (height - w) // 2
+                                bb = height - b - w
+
+                                image = np.pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(
+                                    np.uint8)
+
+                            # scaling
+                            image -= image.min(axis=(0, 1), keepdims=True)
+                            image = image.astype(np.float32)
+                            image /= image.max(axis=(0, 1), keepdims=True)
+
+                            # imagenet normalization
+                            image = (image - IMAGENET_MEANS) / IMAGENET_STDS
+
+                            image = np.moveaxis(image, [0, 1, 2], [1, 2, 0])
+                            framestack.append(image)
+                        framestack = np.array(framestack).astype(np.float32)
+                        result = triton_inference(
+                            image_data=framestack.astype(np.float32),
+                            model_name='CLIP_video'
+                        )
+
+                    with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
+                        np.save(npy_temp.name, result)
+                        new_fn = file.split('/')[-1].split('.')[0] + '.upload.npy'
+                        self.minio_client.send_to_bucket(
+                            bucket_name='spacewalker-projects',
+                            file=npy_temp.name,
+                            directory=f'{project}/npy',
+                            name_on_storage=new_fn
+                        )
+        # self.start_dr(project=project, model=model.lower(), dr_method=dr_method, modality=modality)
 
     def start_dr(self, project: str, model: str, dr_method: str, modality: str) -> None:
         project_files = self.minio_client.client.list_objects(
@@ -414,18 +473,18 @@ class MinIOWebhook(Connector, TemplateView):
                 file_path=temporary_image.name
             )
             # I should consider building this into a proper dataloader
-            image = imread(temporary_image.name)
+            image = cv.imread(temporary_image.name)
             if image.ndim == 3:
-                # image = cvtColor(image, COLOR_BGR2RGB)
+                # image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
                 pass
             else:
-                image = cvtColor(image, COLOR_GRAY2RGB)
+                image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
 
             # make thumbnail
             thumbnail = resize_longest_edge(image, self.thumbnail_maxsize).astype(np.uint8)
 
             with NamedTemporaryFile(mode='w', suffix='.png') as thumb:
-                imwrite(thumb.name, thumbnail)
+                cv.imwrite(thumb.name, thumbnail)
                 thumbnail_name = file.split('/')[-1].split('.')[0] + '.thumb.png'
                 self.minio_client.send_to_bucket(
                     bucket_name='spacewalker-projects',
@@ -455,6 +514,30 @@ class MinIOWebhook(Connector, TemplateView):
                         name_on_storage=f'{row.Id}.txt'
                     )
 
+    def video_preview_handler(self, fn: str):
+        file = '/'.join([part for part in fn.split('/')[1:]])
+        project_name = file.split('/')[0]
+        with NamedTemporaryFile(mode='wb', suffix='.mp4') as temporary_video:
+            self.minio_client.client.fget_object(
+                bucket_name='spacewalker-projects',
+                object_name=file,
+                file_path=temporary_video.name
+            )
+            video = cv.VideoCapture(temporary_video.name)
+            video.set(cv.CAP_PROP_POS_FRAMES, 0)
+            _, frame = video.read()
+            thumbnail = resize_longest_edge(frame, self.thumbnail_maxsize).astype(np.uint8)
+
+            with NamedTemporaryFile(mode='w', suffix='.png') as thumb:
+                cv.imwrite(thumb.name, thumbnail)
+                thumbnail_name = file.split('/')[-1].split('.')[0] + '.thumb.png'
+                self.minio_client.send_to_bucket(
+                    bucket_name='spacewalker-projects',
+                    file=thumb.name,
+                    directory=f'{project_name}/thumbs',
+                    name_on_storage=thumbnail_name
+                )
+
     @method_decorator(csrf_exempt)
     def dispatch(self, *args, **kwargs) -> None:
         return super(MinIOWebhook, self).dispatch(*args, **kwargs)
@@ -470,8 +553,13 @@ class MinIOWebhook(Connector, TemplateView):
                     task = Thread(target=self.thumbnail_handler, args=(message['Key'],))
                     task.daemon = True
                     task.start()
-                if message['Key'].endswith('.csv'):
+                elif message['Key'].endswith('.csv'):
                     task = Thread(target=self.text_preview_handler, args=(message['Key'],))
+                    task.daemon = True
+                    task.start()
+            case 's3:ObjectCreated:CompleteMultipartUpload':
+                if message['Key'].endswith('.mp4'):
+                    task = Thread(target=self.video_preview_handler, args=(message['Key'],))
                     task.daemon = True
                     task.start()
             case _:
