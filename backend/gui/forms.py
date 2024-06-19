@@ -9,6 +9,9 @@ MODEL_CHOICES = [
     ('ViT', 'ViT'),
     ('DINOV2', 'DINOV2'),
     ('MiniLM_L6_v2', 'MiniLM_L6_v2'),
+    ('CLIP_image', 'CLIP_image'),
+    ('CLIP_text', 'CLIP_text'),
+    ('CLIP_video', 'CLIP_video'),
 ]
 DR_METHODS = [
     ('HNNE', 'HNNE'),

@@ -40,6 +40,8 @@ size_lut = {
     'resnet50': 224,
     'vgg16': 224,
     'dinov2': 224,
+    'clip_image': 224,
+    'clip_video': 224,
 }
 triton_name_lut = {
     'vit': 'vit_b_onnx',
@@ -47,6 +49,9 @@ triton_name_lut = {
     'vgg16': 'vgg_16_onnx',
     'dinov2': 'dinov2_vitb14_onnx',
     'MiniLM_L6_v2': 'MiniLM_ensemble',
+    'clip_image': 'CLIP_image',
+    'clip_text': 'CLIP_text',
+    'clip_video': 'CLIP_video',
 }
 
 
@@ -293,7 +298,7 @@ class InferenceSettingsView(Connector, TemplateView):
                         try:
                             result = triton_inference_text(
                                 text=row.Text,
-                                model_name='MiniLM_ensemble'
+                                model_name=triton_name_lut[model.lower()]
                             )
                         except tritonclient.utils.InferenceServerException:
                             logging.error(f'Error encountered in {row.Text}')
@@ -355,7 +360,7 @@ class InferenceSettingsView(Connector, TemplateView):
                         framestack = np.array(framestack).astype(np.float32)
                         result = triton_inference(
                             image_data=framestack.astype(np.float32),
-                            model_name='CLIP_video'
+                            model_name=triton_name_lut[model.lower()]
                         )
 
                     with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
@@ -367,7 +372,7 @@ class InferenceSettingsView(Connector, TemplateView):
                             directory=f'{project}/npy',
                             name_on_storage=new_fn
                         )
-        # self.start_dr(project=project, model=model.lower(), dr_method=dr_method, modality=modality)
+        self.start_dr(project=project, model=model.lower(), dr_method=dr_method, modality=modality)
 
     def start_dr(self, project: str, model: str, dr_method: str, modality: str) -> None:
         project_files = self.minio_client.client.list_objects(
@@ -387,7 +392,8 @@ class InferenceSettingsView(Connector, TemplateView):
                 fns = [i.replace('/npy/', '/thumbs/').replace('.npy', '.txt').replace('.upload', '') for i in fns]
                 thumbs = fns
             case 'video':
-                raise NotImplementedError
+                fns = [i.replace('/npy/', '/raw/').replace('.npy', '.png') for i in fns]
+                thumbs = [i.replace('/raw/', '/thumbs/').replace('upload', 'thumb') for i in fns]
             case _:
                 raise ValueError(f'Unknown {modality=}')
 
