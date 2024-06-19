@@ -5,7 +5,7 @@ from django.core import serializers
 from django.contrib import messages
 from django.shortcuts import render, redirect, reverse
 from django.views.generic import TemplateView
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.utils.decorators import method_decorator
 from django.utils.safestring import mark_safe
 from django.views.decorators.csrf import requires_csrf_token, csrf_exempt
@@ -112,12 +112,21 @@ class guiView(TemplateView):
 
     @method_decorator(requires_csrf_token)
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-
-
-        three_js_data = json.loads(request.body)
-        with mp.Pool(MAX_PROCESSES) as pool:
-            pool.map(self.update_datapoint, iterable=three_js_data)
-        return HttpResponse(200)
+        if 'requestType' in request.POST:
+            # get image / text
+            # Embed the query
+            point2d = (0, 0, 0)
+            point3d = (0, 0, 0)
+            embedding = {
+                '2d_embedding': point2d,
+                '3d_embedding': point3d,
+            }
+            return JsonResponse(embedding, status=200)
+        else:
+            three_js_data = json.loads(request.body)
+            with mp.Pool(MAX_PROCESSES) as pool:
+                pool.map(self.update_datapoint, iterable=three_js_data)
+            return HttpResponse(200)
 
     @staticmethod
     def update_datapoint(datapoint: dict):

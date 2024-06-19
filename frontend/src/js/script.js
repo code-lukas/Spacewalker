@@ -7,7 +7,6 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Pane } from 'tweakpane';
 
-
 // Storage
 const Minio = require('minio');
 let minioClient = new Minio.Client({
@@ -65,6 +64,10 @@ let multiSelect = false;
 let cursorIn3D = false;
 let isMouseDown = false;
 let hoverId;
+
+//query points
+let octahedron2d;
+let octahedron3d;
 
 // slider
 let sliderPos = window.innerWidth / 4;
@@ -801,3 +804,65 @@ function handleSaveAnnotationsClick() {
         console.error('There was a problem with the request:', error);
       });
 }
+
+document.getElementById('inputForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const formData = new FormData();
+    formData.append('requestType', 'query')
+
+    const textInput = document.getElementById('textInput').value;
+    const imageInput = document.getElementById('imageInput').files[0];
+
+    if (textInput) {
+        formData.append('textInput', textInput);
+    }
+
+    if (imageInput) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            formData.append('imageInput', imageInput);
+            sendRequest(formData);
+        };
+        reader.readAsDataURL(imageInput);
+    } else {
+        sendRequest(formData);
+    }
+
+function sendRequest(formData) {
+    const csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
+    fetch('/gui/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Handle success
+        scene2D.remove(octahedron2d);
+        scene3D.remove(octahedron3d);
+
+        const queryPoint2d = data['2d_embedding'];
+        const queryPoint3d = data['3d_embedding'];
+
+        const queryGeometry = new THREE.OctahedronGeometry(1);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // red color (optional)
+        
+        octahedron2d = new THREE.Mesh(queryGeometry, material);
+        octahedron3d = new THREE.Mesh(queryGeometry, material);
+
+        octahedron2d.position.set(queryPoint2d[0], 0, queryPoint2d[1]);
+        octahedron3d.position.set(queryPoint3d[0], queryPoint3d[2], queryPoint3d[1]);
+
+        scene2D.add(octahedron2d);
+        scene3D.add(octahedron3d);
+
+        render();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        // Handle error
+    });
+}
+});
