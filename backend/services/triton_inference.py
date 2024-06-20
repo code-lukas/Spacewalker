@@ -2,6 +2,9 @@ import tritonclient.http as httpclient
 from tritonclient.utils import *
 import numpy as np
 
+# debug
+from uuid import uuid4
+
 
 def triton_inference(
         image_data: np.ndarray,
@@ -11,6 +14,7 @@ def triton_inference(
         port: int = 8000
     ):
     """Infer results using a running triton instance"""
+
     with httpclient.InferenceServerClient(f"{service_name}:{port}") as client:
         input0_data = image_data
         # input0_data = np.random.rand(3, 1024, 1024).astype(np.float32)
