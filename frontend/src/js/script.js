@@ -336,6 +336,10 @@ function initCursorGUI() {
         // update grids
 
         layoutScale = maxCoordinate * scale * 2;
+
+        // update the query point
+
+        // init grids
         initGrids();
     });
 
@@ -809,6 +813,8 @@ document.getElementById('inputForm').addEventListener('submit', function(event) 
     event.preventDefault();
     const formData = new FormData();
     formData.append('requestType', 'query')
+    formData.append('project', data2d[0]['project_name'])
+    formData.append('model', data2d[0]['model'])
 
     const textInput = document.getElementById('textInput').value;
     const imageInput = document.getElementById('imageInput').files[0];
@@ -852,8 +858,8 @@ function sendRequest(formData) {
         octahedron2d = new THREE.Mesh(queryGeometry, material);
         octahedron3d = new THREE.Mesh(queryGeometry, material);
 
-        octahedron2d.position.set(queryPoint2d[0], 0, queryPoint2d[1]);
-        octahedron3d.position.set(queryPoint3d[0], queryPoint3d[2], queryPoint3d[1]);
+        octahedron2d.position.set(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
+        octahedron3d.position.set(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale);
 
         scene2D.add(octahedron2d);
         scene3D.add(octahedron3d);

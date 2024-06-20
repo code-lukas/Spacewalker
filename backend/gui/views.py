@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pickle
 import tritonclient.utils
 from django.core import serializers
 from django.contrib import messages
@@ -48,7 +49,7 @@ triton_name_lut = {
     'resnet50': 'resnet_50_onnx',
     'vgg16': 'vgg_16_onnx',
     'dinov2': 'dinov2_vitb14_onnx',
-    'MiniLM_L6_v2': 'MiniLM_ensemble',
+    'minilm_l6_v2': 'MiniLM_ensemble',
     'clip_image': 'CLIP_image',
     'clip_text': 'CLIP_text',
     'clip_video': 'CLIP_video',
@@ -66,6 +67,37 @@ def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
     return cv.resize(img, (new_h, new_w), interpolation=cv.INTER_CUBIC)
 
 
+def prepare_image_for_inference(image: np.array, model: str):
+    # I should consider building this into a proper dataloader
+    if image.ndim != 3:
+        image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
+
+    h = image.shape[0]
+    w = image.shape[1]
+    width = height = size_lut[model.lower()]
+
+    if h > height or w > width:
+        image = cv.resize(image, (width, height), interpolation=cv.INTER_CUBIC).astype(np.uint8)
+    else:
+        a = (width - h) // 2
+        aa = width - a - h
+
+        b = (height - w) // 2
+        bb = height - b - w
+
+        image = np.pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(np.uint8)
+
+    # scaling
+    image -= image.min(axis=(0, 1), keepdims=True)
+    image = image.astype(np.float32)
+    image /= image.max(axis=(0, 1), keepdims=True)
+
+    # imagenet normalization
+    image = (image - IMAGENET_MEANS) / IMAGENET_STDS
+
+    return np.moveaxis(image, [0, 1, 2], [1, 2, 0])
+
+
 # Create your views here.
 
 class Connector:
@@ -80,7 +112,7 @@ class Connector:
         )
 
 
-class guiView(TemplateView):
+class guiView(Connector, TemplateView):
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         context = {}
 
@@ -112,14 +144,51 @@ class guiView(TemplateView):
 
     @method_decorator(requires_csrf_token)
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+
         if 'requestType' in request.POST:
-            # get image / text
-            # Embed the query
-            point2d = (0, 0, 0)
-            point3d = (0, 0, 0)
+            # can't use both image and text
+            if (len(request.FILES) != 0) and ('textInput' in request.POST):
+                return HttpResponse(500)
+
+            used_model = request.POST['model']
+            project_name = request.POST['project']
+
+            # this means an image query
+            if len(request.FILES) != 0:
+                image = cv.imread(request.FILES['imageInput'].temporary_file_path())
+                image = prepare_image_for_inference(image, model=used_model)
+                embedding = triton_inference(image.astype(np.float32), model_name=triton_name_lut[used_model.lower()])
+            else:
+                # text query
+                text = request.POST['textInput']
+                embedding = triton_inference_text(text, model_name="CLIP_text")
+
+            # load the dr method
+            with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr_method:
+                self.minio_client.client.fget_object(
+                    bucket_name='spacewalker-projects',
+                    object_name=f'{project_name}/dr/dr2d.pkl',
+                    file_path=dr_method.name
+                )
+                with open(dr_method.name, 'rb') as f:
+                    save_data = pickle.load(f)
+                query2d = save_data['dr_method'].transform(embedding)
+                query2d /= float(save_data['scale_val'])
+
+                with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr_method:
+                    self.minio_client.client.fget_object(
+                        bucket_name='spacewalker-projects',
+                        object_name=f'{project_name}/dr/dr3d.pkl',
+                        file_path=dr_method.name
+                    )
+                    with open(dr_method.name, 'rb') as f:
+                        save_data = pickle.load(f)
+                    query3d = save_data['dr_method'].transform(embedding)
+                    query3d /= float(save_data['scale_val'])
+
             embedding = {
-                '2d_embedding': point2d,
-                '3d_embedding': point3d,
+                '2d_embedding': tuple(query2d[0]),
+                '3d_embedding': tuple(query3d[0]),
             }
             return JsonResponse(embedding, status=200)
         else:
@@ -233,37 +302,8 @@ class InferenceSettingsView(Connector, TemplateView):
                             object_name=file,
                             file_path=temporary_image.name
                         )
-                        # I should consider building this into a proper dataloader
                         image = cv.imread(temporary_image.name)
-                        if image.ndim == 3:
-                            # image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
-                            pass
-                        else:
-                            image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
-                        h = image.shape[0]
-                        w = image.shape[1]
-                        width = height = size_lut[model.lower()]
-
-                        if h > height or w > width:
-                            image = cv.resize(image, (width, height), interpolation=cv.INTER_CUBIC).astype(np.uint8)
-                        else:
-                            a = (width - h) // 2
-                            aa = width - a - h
-
-                            b = (height - w) // 2
-                            bb = height - b - w
-
-                            image = np.pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(np.uint8)
-
-                        # scaling
-                        image -= image.min(axis=(0, 1), keepdims=True)
-                        image = image.astype(np.float32)
-                        image /= image.max(axis=(0, 1), keepdims=True)
-
-                        # imagenet normalization
-                        image = (image - IMAGENET_MEANS) / IMAGENET_STDS
-
-                        image = np.moveaxis(image, [0, 1, 2], [1, 2, 0])
+                        image = prepare_image_for_inference(image, model.lower())
                         # images need to be padded to fit vit input shape
                         result = triton_inference(
                             image_data=image.astype(np.float32),
@@ -339,32 +379,7 @@ class InferenceSettingsView(Connector, TemplateView):
                         for frame in equidistant_frame_indices:
                             video.set(cv.CAP_PROP_POS_FRAMES, frame)
                             ret, image = video.read()
-
-                            h = image.shape[0]
-                            w = image.shape[1]
-                            width = height = size_lut[model.lower()]
-
-                            if h > height or w > width:
-                                image = cv.resize(image, (width, height), interpolation=cv.INTER_CUBIC).astype(np.uint8)
-                            else:
-                                a = (width - h) // 2
-                                aa = width - a - h
-
-                                b = (height - w) // 2
-                                bb = height - b - w
-
-                                image = np.pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(
-                                    np.uint8)
-
-                            # scaling
-                            image -= image.min(axis=(0, 1), keepdims=True)
-                            image = image.astype(np.float32)
-                            image /= image.max(axis=(0, 1), keepdims=True)
-
-                            # imagenet normalization
-                            image = (image - IMAGENET_MEANS) / IMAGENET_STDS
-
-                            image = np.moveaxis(image, [0, 1, 2], [1, 2, 0])
+                            image = prepare_image_for_inference(image, model.lower())
                             framestack.append(image)
                         framestack = np.array(framestack).astype(np.float32)
                         result = triton_inference(
@@ -428,20 +443,53 @@ class InferenceSettingsView(Connector, TemplateView):
         scale = 1
         # NOTE: This line will fail if there are too few datapoints!
         if dr_method.lower() == 'hnne':
-            dr2d = dr2d.fit_transform(x, dim=2)
+            proj2d = dr2d.fit_transform(x, dim=2)
         else:
-            dr2d = dr2d.fit_transform(x)
+            dr2d = dr2d.fit(x)
+            proj2d = dr2d.transform(x)
+
+        scale_val_2d = np.max(proj2d)
+
         # dr2d = (dr2d / np.linalg.norm(dr2d)) * scale
-        dr2d = (dr2d / (np.max(dr2d))) * scale
+        with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr2d_save:
+            save_data = {
+                'dr_method': dr2d,
+                'scale_val': scale_val_2d
+            }
+            pickle.dump(save_data, dr2d_save)
+            self.minio_client.send_to_bucket(
+                bucket_name='spacewalker-projects',
+                file=dr2d_save.name,
+                directory=f'{project}/dr',
+                name_on_storage='dr2d.pkl'
+            )
 
         if dr_method.lower() == 'hnne':
-            dr3d = dr3d.fit_transform(x, dim=3)
+            proj3d = dr3d.fit_transform(x, dim=3)
         else:
-            dr3d = dr3d.fit_transform(x)
-        # dr3d = (dr3d / np.linalg.norm(dr3d)) * scale
-        dr3d = (dr3d / (np.max(dr3d))) * scale
+            dr3d = dr3d.fit(x)
+            proj3d = dr3d.transform(x)
 
-        points = list(dr2d) + list(dr3d)
+        scale_val_3d = np.max(proj3d)
+
+        # dr3d = (dr3d / np.linalg.norm(dr3d)) * scale
+        with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr3d_save:
+            save_data = {
+                'dr_method': dr3d,
+                'scale_val': scale_val_3d
+            }
+            pickle.dump(save_data, dr3d_save)
+            self.minio_client.send_to_bucket(
+                bucket_name='spacewalker-projects',
+                file=dr3d_save.name,
+                directory=f'{project}/dr',
+                name_on_storage='dr3d.pkl'
+            )
+
+        proj2d = (proj2d / scale_val_2d) * scale
+        proj3d = (proj3d / scale_val_3d) * scale
+
+        points = list(proj2d) + list(proj3d)
         point_creation = partial(self.make_point, model, dr_method, project, modality)
         with mp.Pool(processes=MAX_PROCESSES) as pool:
             new_points = pool.starmap(point_creation, zip(points, fns * 2, thumbs * 2))
@@ -519,7 +567,7 @@ class MinIOWebhook(Connector, TemplateView):
             )
             df = pd.read_csv(temporary_table.name)
             for row in df.itertuples():
-                with NamedTemporaryFile(mode='w', suffix='.txt') as txt:
+                with NamedTemporaryFile(mode='w+', suffix='.txt') as txt:
                     with open(txt.name, 'w') as txt_file:
                         txt_file.write(row.Text)
                     self.minio_client.send_to_bucket(
