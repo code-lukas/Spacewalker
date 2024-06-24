@@ -363,7 +363,7 @@ function initCameras() {
         1000,
     );
     //camera2D.position.set(layoutScale, layoutScale, layoutScale);
-    camera2D.position.set(0, 50, 0);
+    camera2D.position.set(0, 20, 0);
     camera2D.lookAt(0, 0, 0 );
 
     camera3D = new THREE.PerspectiveCamera(
@@ -863,6 +863,20 @@ function sendRequest(formData) {
 
         scene2D.add(octahedron2d);
         scene3D.add(octahedron3d);
+
+        // set cameras
+        //2D
+        camera2D.position.set(queryPoint2d[0] * scale, camera2D.position.y, queryPoint2d[1] * scale);
+        camera2D.lookAt(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
+
+        controls2D.target.set(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale); // Reset the target to the center or desired point.
+        controls2D.update();
+
+        //3D
+        camera3D.lookAt(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale);
+
+        controls3D.target.set(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale); // Reset the target to the center or desired point.
+        controls3D.update();
 
         render();
     })
