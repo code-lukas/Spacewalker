@@ -153,10 +153,15 @@ class guiView(Connector, TemplateView):
             used_model = request.POST['model']
             project_name = request.POST['project']
 
+            # FIXME: The model matching for text -> image and image -> text is hardcoded, if we get more models i should
+            # build a LUT
             # this means an image query
             if len(request.FILES) != 0:
                 image = cv.imread(request.FILES['imageInput'].temporary_file_path())
-                image = prepare_image_for_inference(image, model=used_model)
+                # This likely means an image query in a text based project
+                if used_model not in size_lut:
+                    used_model = 'CLIP_image'
+                    image = prepare_image_for_inference(image, model=used_model)
                 embedding = triton_inference(image.astype(np.float32), model_name=triton_name_lut[used_model.lower()])
             else:
                 # text query

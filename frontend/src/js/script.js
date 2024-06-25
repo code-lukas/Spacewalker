@@ -865,6 +865,8 @@ function sendRequest(formData) {
         scene3D.add(octahedron3d);
 
         // set cameras
+        let frustum = new THREE.Frustum()
+        let frustum_matrix = new THREE.Matrix4().multiplyMatrices(camera2D.projectionMatrix, camera2D.matrixWorldInverse);
         //2D
         camera2D.position.set(queryPoint2d[0] * scale, camera2D.position.y, queryPoint2d[1] * scale);
         camera2D.lookAt(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
