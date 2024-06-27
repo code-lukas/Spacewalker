@@ -161,7 +161,8 @@ class guiView(Connector, TemplateView):
                 # This likely means an image query in a text based project
                 if used_model not in size_lut:
                     used_model = 'CLIP_image'
-                    image = prepare_image_for_inference(image, model=used_model)
+                image = prepare_image_for_inference(image, model=used_model)
+
                 embedding = triton_inference(image.astype(np.float32), model_name=triton_name_lut[used_model.lower()])
             else:
                 # text query
