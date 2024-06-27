@@ -192,8 +192,8 @@ class guiView(Connector, TemplateView):
                     query3d /= float(save_data['scale_val'])
 
             embedding = {
-                '2d_embedding': tuple(query2d[0]),
-                '3d_embedding': tuple(query3d[0]),
+                '2d_embedding': tuple(query2d[0].astype(np.float64)),
+                '3d_embedding': tuple(query3d[0].astype(np.float64)),
             }
             return JsonResponse(embedding, status=200)
         else:
