@@ -1,11 +1,17 @@
 from django import forms
 from ..services.minio_interface import MinioClient
+from django.core.exceptions import ValidationError
+
 
 MODEL_CHOICES = [
     ('ResNet50', 'ResNet-50'),
     ('VGG16', 'VGG-16'),
     ('ViT', 'ViT'),
     ('DINOV2', 'DINOV2'),
+    ('MiniLM_L6_v2', 'MiniLM_L6_v2'),
+    ('CLIP_image', 'CLIP_image'),
+    ('CLIP_text', 'CLIP_text'),
+    ('CLIP_video', 'CLIP_video'),
 ]
 DR_METHODS = [
     ('HNNE', 'HNNE'),
@@ -13,6 +19,11 @@ DR_METHODS = [
     ('T-SNE', 'T-SNE'),
     ('MDS', 'MDS'),
     ('ISOMAP', 'ISOMAP'),
+]
+MODALITIES = [
+    ('image', 'Image'),
+    ('text', 'Text'),
+    ('video', 'Video'),
 ]
 
 
@@ -54,10 +65,39 @@ class ConfigurationForm(forms.Form):
         required=True
     )
 
+    modality = forms.ChoiceField(
+        choices=MODALITIES,
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        label='Modality'
+    )
+
     input_path = MultipleFileField(
         required=False,
         label='Add / upload files to project',
     )
+
+    def clean_input_path(self):
+        files = self.cleaned_data.get('input_path')
+        modality = self.cleaned_data.get('modality')
+
+        if not files:
+            return files
+
+        allowed_extensions = {
+            'image': ['.png', '.jpg', '.jpeg'],
+            'text': ['.csv'],
+            'video': ['.mp3', '.mp4'],
+        }
+
+        if modality not in allowed_extensions:
+            raise ValidationError(f'Unsupported modality: {modality}')
+
+        for file in files:
+            extension = file.name.split('.')[-1]
+            if f'.{extension}' not in allowed_extensions[modality]:
+                raise ValidationError(f'Unsupported file extension for {modality}: .{extension}')
+
+        return files
 
 
 class InferenceSettingsForm(forms.Form):

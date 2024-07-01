@@ -1,6 +1,7 @@
 services:
   spacewalker-triton:
-    image: nvcr.io/nvidia/tritonserver:23.09-py3
+#    image: nvcr.io/nvidia/tritonserver:23.09-py3
+    build: Triton
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -22,7 +23,7 @@ services:
     depends_on:
       - spacewalker-triton
     healthcheck:
-      # i suspect that this healtcheck isn't functional
+      # i suspect that this healthcheck isn't functional
       test: [ "CMD", "curl", "-f", "http://0.0.0.0:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s
@@ -76,7 +77,7 @@ services:
 #    ports:
 #    # debug only
 #      - "5432:5432"
-    
+
   label_studio:
     image: heartexlabs/label-studio:latest
     container_name: label_studio
@@ -97,5 +98,5 @@ services:
 
 
 volumes:
-    minio_storage:
-    label-studio-data:
+  minio_storage:
+  label-studio-data:

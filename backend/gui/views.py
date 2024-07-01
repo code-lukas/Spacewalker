@@ -1,9 +1,12 @@
 import numpy as np
+import pandas as pd
+import pickle
+import tritonclient.utils
 from django.core import serializers
 from django.contrib import messages
 from django.shortcuts import render, redirect, reverse
 from django.views.generic import TemplateView
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.utils.decorators import method_decorator
 from django.utils.safestring import mark_safe
 from django.views.decorators.csrf import requires_csrf_token, csrf_exempt
@@ -16,19 +19,41 @@ from threading import Thread
 from queue import Queue
 from typing import Any
 
-from cv2 import imread, imwrite, COLOR_BGR2RGB, COLOR_GRAY2RGB, cvtColor, resize
+import cv2 as cv
+# from minio.select import CSVInputSerialization, CSVOutputSerialization, SelectRequest
 from .models import DataPoint, AnnotationColorDescription
 import multiprocessing as mp
-from numpy import float32, moveaxis, pad, uint8
 from sklearn.manifold import TSNE, MDS, Isomap
 from sklearn.decomposition import PCA
-from ..services.triton_inference import triton_inference
+from ..services.triton_inference import triton_inference, triton_inference_text
 from ..services.minio_interface import MinioClient
 from .forms import ConfigurationForm, InferenceSettingsForm
 
+import logging
+
 MAX_PROCESSES = 10
+SAMPLE_N_FRAMES_VIDEO = 10
 IMAGENET_MEANS = np.array([0.485, 0.456, 0.406])
 IMAGENET_STDS = np.array([0.229, 0.224, 0.225])
+
+size_lut = {
+    'vit': 1024,
+    'resnet50': 224,
+    'vgg16': 224,
+    'dinov2': 224,
+    'clip_image': 224,
+    'clip_video': 224,
+}
+triton_name_lut = {
+    'vit': 'vit_b_onnx',
+    'resnet50': 'resnet_50_onnx',
+    'vgg16': 'vgg_16_onnx',
+    'dinov2': 'dinov2_vitb14_onnx',
+    'minilm_l6_v2': 'MiniLM_ensemble',
+    'clip_image': 'CLIP_image',
+    'clip_text': 'CLIP_text',
+    'clip_video': 'CLIP_video',
+}
 
 
 def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
@@ -39,7 +64,38 @@ def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
     else:
         new_h = int((longest_edge / w) * h)
         new_w = longest_edge
-    return resize(img, (new_h, new_w))
+    return cv.resize(img, (new_h, new_w), interpolation=cv.INTER_CUBIC)
+
+
+def prepare_image_for_inference(image: np.array, model: str):
+    # I should consider building this into a proper dataloader
+    if image.ndim != 3:
+        image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
+
+    h = image.shape[0]
+    w = image.shape[1]
+    width = height = size_lut[model.lower()]
+
+    if h > height or w > width:
+        image = cv.resize(image, (width, height), interpolation=cv.INTER_CUBIC).astype(np.uint8)
+    else:
+        a = (width - h) // 2
+        aa = width - a - h
+
+        b = (height - w) // 2
+        bb = height - b - w
+
+        image = np.pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(np.uint8)
+
+    # scaling
+    image -= image.min(axis=(0, 1), keepdims=True)
+    image = image.astype(np.float32)
+    image /= image.max(axis=(0, 1), keepdims=True)
+
+    # imagenet normalization
+    image = (image - IMAGENET_MEANS) / IMAGENET_STDS
+
+    return np.moveaxis(image, [0, 1, 2], [1, 2, 0])
 
 
 # Create your views here.
@@ -56,7 +112,7 @@ class Connector:
         )
 
 
-class guiView(TemplateView):
+class guiView(Connector, TemplateView):
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         context = {}
 
@@ -88,10 +144,64 @@ class guiView(TemplateView):
 
     @method_decorator(requires_csrf_token)
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        three_js_data = json.loads(request.body)
-        with mp.Pool(MAX_PROCESSES) as pool:
-            pool.map(self.update_datapoint, iterable=three_js_data)
-        return HttpResponse(200)
+
+        if 'requestType' in request.POST:
+            # can't use both image and text
+            if (len(request.FILES) != 0) and ('textInput' in request.POST):
+                return HttpResponse(500)
+
+            used_model = request.POST['model']
+            project_name = request.POST['project']
+
+            # FIXME: The model matching for text -> image and image -> text is hardcoded, if we get more models i should
+            # build a LUT
+            # this means an image query
+            if len(request.FILES) != 0:
+                image = cv.imread(request.FILES['imageInput'].temporary_file_path())
+                # This likely means an image query in a text based project
+                if used_model not in size_lut:
+                    used_model = 'CLIP_image'
+                image = prepare_image_for_inference(image, model=used_model)
+
+                embedding = triton_inference(image.astype(np.float32), model_name=triton_name_lut[used_model.lower()])
+            else:
+                # text query
+                text = request.POST['textInput']
+                embedding = triton_inference_text(text, model_name="CLIP_text")
+
+            # load the dr method
+            with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr_method:
+                self.minio_client.client.fget_object(
+                    bucket_name='spacewalker-projects',
+                    object_name=f'{project_name}/dr/dr2d.pkl',
+                    file_path=dr_method.name
+                )
+                with open(dr_method.name, 'rb') as f:
+                    save_data = pickle.load(f)
+                query2d = save_data['dr_method'].transform(embedding)
+                query2d /= float(save_data['scale_val'])
+
+                with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr_method:
+                    self.minio_client.client.fget_object(
+                        bucket_name='spacewalker-projects',
+                        object_name=f'{project_name}/dr/dr3d.pkl',
+                        file_path=dr_method.name
+                    )
+                    with open(dr_method.name, 'rb') as f:
+                        save_data = pickle.load(f)
+                    query3d = save_data['dr_method'].transform(embedding)
+                    query3d /= float(save_data['scale_val'])
+
+            embedding = {
+                '2d_embedding': tuple(query2d[0].astype(np.float64)),
+                '3d_embedding': tuple(query3d[0].astype(np.float64)),
+            }
+            return JsonResponse(embedding, status=200)
+        else:
+            three_js_data = json.loads(request.body)
+            with mp.Pool(MAX_PROCESSES) as pool:
+                pool.map(self.update_datapoint, iterable=three_js_data)
+            return HttpResponse(200)
 
     @staticmethod
     def update_datapoint(datapoint: dict):
@@ -133,7 +243,7 @@ class configurationView(Connector, TemplateView):
                 )
             messages.success(request, 'Submission successful!')
         else:
-            messages.error(request, 'Submission unsuccessful!')
+            messages.error(request, 'Submission unsuccessful! - Please check the file types')
         return HttpResponseRedirect(request.path_info)
 
 
@@ -148,7 +258,15 @@ class InferenceSettingsView(Connector, TemplateView):
             return np.load(temporary_image.name)
 
     @staticmethod
-    def make_point(model: str, dr_method: str, project_name: str, point: np.array, filename: str, thumbnail_name: str) -> DataPoint:
+    def make_point(
+            model: str,
+            dr_method: str,
+            project_name: str,
+            modality: str,
+            point: np.array,
+            filename: str,
+            thumbnail_name: str,
+    ) -> DataPoint:
         is3d = len(point) == 3
         z = 0
         if is3d:
@@ -163,96 +281,151 @@ class InferenceSettingsView(Connector, TemplateView):
             class_name='',
             cluster_id=0,
             file_reference=filename,
-            thumbnail_reference=thumbnail_name,
+            preview=thumbnail_name,
             is3d=is3d,
+            modality=modality,
         )
 
     def inference(self, project: str, model: str, dr_method: str) -> None:
-        size_lut = {
-            'vit': 1024,
-            'resnet50': 224,
-            'vgg16': 224,
-            'dinov2': 224,
-        }
-        triton_name_lut = {
-            'vit': 'vit_b_onnx',
-            'resnet50': 'resnet_50_onnx',
-            'vgg16': 'vgg_16_onnx',
-            'dinov2': 'dinov2_vitb14_onnx',
-        }
         file_gen = self.minio_client.client.list_objects(
             bucket_name='spacewalker-projects',
             prefix=f'{project}/raw',
             recursive=True
         )
         files = [f.object_name for f in file_gen]
-        for file in files:
-            with NamedTemporaryFile(mode='wb', suffix='.png') as temporary_image:
-                self.minio_client.client.fget_object(
-                    bucket_name='spacewalker-projects',
-                    object_name=file,
-                    file_path=temporary_image.name
-                )
-                # I should consider building this into a proper dataloader
-                image = imread(temporary_image.name)
-                if image.ndim == 3:
-                    # image = cvtColor(image, COLOR_BGR2RGB)
-                    pass
-                else:
-                    image = cvtColor(image, COLOR_GRAY2RGB)
-                h = image.shape[0]
-                w = image.shape[1]
-                width = height = size_lut[model.lower()]
 
-                if h > height or w > width:
-                    image = resize(image, (width, height)).astype(uint8)
-                else:
-                    a = (width - h) // 2
-                    aa = width - a - h
+        # Distinguish between text, image and video
+        file_type = files[0].split('.')[-1].lower()
 
-                    b = (height - w) // 2
-                    bb = height - b - w
+        modality = None
+        match file_type:
+            case 'png' | 'jpg' | 'jpeg':
+                modality = 'image'
+                for file in files:
+                    with NamedTemporaryFile(mode='wb', suffix='.png') as temporary_image:
+                        self.minio_client.client.fget_object(
+                            bucket_name='spacewalker-projects',
+                            object_name=file,
+                            file_path=temporary_image.name
+                        )
+                        image = cv.imread(temporary_image.name)
+                        image = prepare_image_for_inference(image, model.lower())
+                        # images need to be padded to fit vit input shape
+                        result = triton_inference(
+                            image_data=image.astype(np.float32),
+                            model_name=triton_name_lut[model.lower()]
+                        )
+                        with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
+                            np.save(npy_temp.name, result)
+                            new_fn = file.split('/')[-1].split('.')[0] + '.upload.npy'
+                            self.minio_client.send_to_bucket(
+                                bucket_name='spacewalker-projects',
+                                file=npy_temp.name,
+                                directory=f'{project}/npy',
+                                name_on_storage=new_fn
+                            )
+            case 'csv':
+                modality = 'text'
+                master_file = files[0]
+                # FIXME: This is a way more elegant solution, however the parsing needs to be more robust
+                # with self.minio_client.client.select_object_content(
+                #         bucket_name='spacewalker-projects',
+                #         object_name=master_file,
+                #         request=SelectRequest(
+                #             "select * from S3Object",
+                #             CSVInputSerialization(),
+                #             CSVOutputSerialization(),
+                #             request_progress=True)) as result:
+                #     for data in result.stream():
+                #         lines = data.split(b'\n')
+                #         for line in lines:
+                #             text_id, text = line.decode().split(',', 1)
+                #             text_id = int(text_id)
 
-                    image = pad(image, pad_width=((a, aa), (b, bb), (0, 0)), mode='constant').astype(uint8)
-
-                # scaling
-                image -= image.min(axis=(0, 1), keepdims=True)
-                image = image.astype(float32)
-                image /= image.max(axis=(0, 1), keepdims=True)
-
-                # imagenet normalization
-                image = (image - IMAGENET_MEANS) / IMAGENET_STDS
-
-                image = moveaxis(image, [0, 1, 2], [1, 2, 0])
-                # images need to be padded to fit vit input shape
-                result = triton_inference(
-                    image_data=image.astype(float32),
-                    model_name=triton_name_lut[model.lower()]
-                )
-                with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
-                    np.save(npy_temp.name, result)
-                    new_fn = file.split('/')[-1].split('.')[0] + '.upload.npy'
-                    self.minio_client.send_to_bucket(
+                with NamedTemporaryFile(mode='wb', suffix='.csv') as temporary_text:
+                    self.minio_client.client.fget_object(
                         bucket_name='spacewalker-projects',
-                        file=npy_temp.name,
-                        directory=f'{project}/npy',
-                        name_on_storage=new_fn
-
+                        object_name=master_file,
+                        file_path=temporary_text.name
                     )
-        self.start_dr(project=project, model=model.lower(), dr_method=dr_method)
+                    df = pd.read_csv(temporary_text.name)
+                    for row in df.itertuples():
+                        try:
+                            result = triton_inference_text(
+                                text=row.Text,
+                                model_name=triton_name_lut[model.lower()]
+                            )
+                        except tritonclient.utils.InferenceServerException:
+                            logging.error(f'Error encountered in {row.Text}')
 
-    def start_dr(self, project: str, model: str, dr_method: str) -> None:
+                        with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
+                            np.save(npy_temp.name, result)
+                            new_fn = f'{row.Id}.upload.npy'
+                            self.minio_client.send_to_bucket(
+                                bucket_name='spacewalker-projects',
+                                file=npy_temp.name,
+                                directory=f'{project}/npy',
+                                name_on_storage=new_fn
+                            )
+            case 'mp3' | 'mp4':
+                modality = 'video'
+                for file in files:
+                    framestack = []
+                    with NamedTemporaryFile(mode='wb', suffix='.mp4') as temporary_video:
+                        self.minio_client.client.fget_object(
+                            bucket_name='spacewalker-projects',
+                            object_name=file,
+                            file_path=temporary_video.name
+                        )
+                        # get frames to build batch
+                        video = cv.VideoCapture(temporary_video.name)
+                        frame_count = video.get(cv.CAP_PROP_FRAME_COUNT)
+                        equidistant_frame_indices = np.arange(0, frame_count, frame_count/SAMPLE_N_FRAMES_VIDEO)\
+                            .astype(int)
+                        for frame in equidistant_frame_indices:
+                            video.set(cv.CAP_PROP_POS_FRAMES, frame)
+                            ret, image = video.read()
+                            image = prepare_image_for_inference(image, model.lower())
+                            framestack.append(image)
+                        framestack = np.array(framestack).astype(np.float32)
+                        result = triton_inference(
+                            image_data=framestack.astype(np.float32),
+                            model_name=triton_name_lut[model.lower()]
+                        )
+
+                    with NamedTemporaryFile(mode='w', suffix='.npy') as npy_temp:
+                        np.save(npy_temp.name, result)
+                        new_fn = file.split('/')[-1].split('.')[0] + '.upload.npy'
+                        self.minio_client.send_to_bucket(
+                            bucket_name='spacewalker-projects',
+                            file=npy_temp.name,
+                            directory=f'{project}/npy',
+                            name_on_storage=new_fn
+                        )
+        self.start_dr(project=project, model=model.lower(), dr_method=dr_method, modality=modality)
+
+    def start_dr(self, project: str, model: str, dr_method: str, modality: str) -> None:
         project_files = self.minio_client.client.list_objects(
             bucket_name='spacewalker-projects',
             prefix=f'{project}/npy',
             recursive=True
         )
-
         fns = [i.object_name for i in list(project_files)]
         # TODO: Multiprocess this !
         data = list(map(self.get_data, fns))
-        fns = [i.replace('/npy/', '/raw/').replace('.npy', '.png') for i in fns]
-        thumbs = [i.replace('/raw/', '/thumbs/').replace('upload', 'thumb') for i in fns]
+
+        match modality.lower():
+            case 'image':
+                fns = [i.replace('/npy/', '/raw/').replace('.npy', '.png') for i in fns]
+                thumbs = [i.replace('/raw/', '/thumbs/').replace('upload', 'thumb') for i in fns]
+            case 'text':
+                fns = [i.replace('/npy/', '/thumbs/').replace('.npy', '.txt').replace('.upload', '') for i in fns]
+                thumbs = fns
+            case 'video':
+                fns = [i.replace('/npy/', '/raw/').replace('.npy', '.png') for i in fns]
+                thumbs = [i.replace('/raw/', '/thumbs/').replace('upload', 'thumb') for i in fns]
+            case _:
+                raise ValueError(f'Unknown {modality=}')
 
         x = np.array(data).squeeze()
         match dr_method.lower():
@@ -276,21 +449,54 @@ class InferenceSettingsView(Connector, TemplateView):
         scale = 1
         # NOTE: This line will fail if there are too few datapoints!
         if dr_method.lower() == 'hnne':
-            dr2d = dr2d.fit_transform(x, dim=2)
+            proj2d = dr2d.fit_transform(x, dim=2)
         else:
-            dr2d = dr2d.fit_transform(x)
+            dr2d = dr2d.fit(x)
+            proj2d = dr2d.transform(x)
+
+        scale_val_2d = np.max(proj2d)
+
         # dr2d = (dr2d / np.linalg.norm(dr2d)) * scale
-        dr2d = (dr2d / (np.max(dr2d))) * scale
+        with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr2d_save:
+            save_data = {
+                'dr_method': dr2d,
+                'scale_val': scale_val_2d
+            }
+            pickle.dump(save_data, dr2d_save)
+            self.minio_client.send_to_bucket(
+                bucket_name='spacewalker-projects',
+                file=dr2d_save.name,
+                directory=f'{project}/dr',
+                name_on_storage='dr2d.pkl'
+            )
 
         if dr_method.lower() == 'hnne':
-            dr3d = dr3d.fit_transform(x, dim=3)
+            proj3d = dr3d.fit_transform(x, dim=3)
         else:
-            dr3d = dr3d.fit_transform(x)
-        # dr3d = (dr3d / np.linalg.norm(dr3d)) * scale
-        dr3d = (dr3d / (np.max(dr3d))) * scale
+            dr3d = dr3d.fit(x)
+            proj3d = dr3d.transform(x)
 
-        points = list(dr2d) + list(dr3d)
-        point_creation = partial(self.make_point, model, dr_method, project)
+        scale_val_3d = np.max(proj3d)
+
+        # dr3d = (dr3d / np.linalg.norm(dr3d)) * scale
+        with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr3d_save:
+            save_data = {
+                'dr_method': dr3d,
+                'scale_val': scale_val_3d
+            }
+            pickle.dump(save_data, dr3d_save)
+            self.minio_client.send_to_bucket(
+                bucket_name='spacewalker-projects',
+                file=dr3d_save.name,
+                directory=f'{project}/dr',
+                name_on_storage='dr3d.pkl'
+            )
+
+        proj2d = (proj2d / scale_val_2d) * scale
+        proj3d = (proj3d / scale_val_3d) * scale
+
+        points = list(proj2d) + list(proj3d)
+        point_creation = partial(self.make_point, model, dr_method, project, modality)
         with mp.Pool(processes=MAX_PROCESSES) as pool:
             new_points = pool.starmap(point_creation, zip(points, fns * 2, thumbs * 2))
         DataPoint.objects.bulk_create(new_points)
@@ -336,25 +542,69 @@ class MinIOWebhook(Connector, TemplateView):
                 file_path=temporary_image.name
             )
             # I should consider building this into a proper dataloader
-            image = imread(temporary_image.name)
+            image = cv.imread(temporary_image.name)
             if image.ndim == 3:
-                # image = cvtColor(image, COLOR_BGR2RGB)
+                # image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
                 pass
             else:
-                image = cvtColor(image, COLOR_GRAY2RGB)
+                image = cv.cvtColor(image, cv.COLOR_GRAY2RGB)
 
             # make thumbnail
-            thumbnail = resize_longest_edge(image, self.thumbnail_maxsize).astype(uint8)
+            thumbnail = resize_longest_edge(image, self.thumbnail_maxsize).astype(np.uint8)
 
             with NamedTemporaryFile(mode='w', suffix='.png') as thumb:
-                imwrite(thumb.name, thumbnail)
+                cv.imwrite(thumb.name, thumbnail)
                 thumbnail_name = file.split('/')[-1].split('.')[0] + '.thumb.png'
                 self.minio_client.send_to_bucket(
                     bucket_name='spacewalker-projects',
                     file=thumb.name,
                     directory=f'{project_name}/thumbs',
                     name_on_storage=thumbnail_name
+                )
 
+    def text_preview_handler(self, fn: str):
+        file = '/'.join([part for part in fn.split('/')[1:]])
+        project_name = file.split('/')[0]
+        with NamedTemporaryFile(mode='wb', suffix='.csv') as temporary_table:
+            self.minio_client.client.fget_object(
+                bucket_name='spacewalker-projects',
+                object_name=file,
+                file_path=temporary_table.name
+            )
+            df = pd.read_csv(temporary_table.name)
+            for row in df.itertuples():
+                with NamedTemporaryFile(mode='w+', suffix='.txt') as txt:
+                    with open(txt.name, 'w') as txt_file:
+                        txt_file.write(row.Text)
+                    self.minio_client.send_to_bucket(
+                        bucket_name='spacewalker-projects',
+                        file=txt.name,
+                        directory=f'{project_name}/thumbs',
+                        name_on_storage=f'{row.Id}.txt'
+                    )
+
+    def video_preview_handler(self, fn: str):
+        file = '/'.join([part for part in fn.split('/')[1:]])
+        project_name = file.split('/')[0]
+        with NamedTemporaryFile(mode='wb', suffix='.mp4') as temporary_video:
+            self.minio_client.client.fget_object(
+                bucket_name='spacewalker-projects',
+                object_name=file,
+                file_path=temporary_video.name
+            )
+            video = cv.VideoCapture(temporary_video.name)
+            video.set(cv.CAP_PROP_POS_FRAMES, 0)
+            _, frame = video.read()
+            thumbnail = resize_longest_edge(frame, self.thumbnail_maxsize).astype(np.uint8)
+
+            with NamedTemporaryFile(mode='w', suffix='.png') as thumb:
+                cv.imwrite(thumb.name, thumbnail)
+                thumbnail_name = file.split('/')[-1].split('.')[0] + '.thumb.png'
+                self.minio_client.send_to_bucket(
+                    bucket_name='spacewalker-projects',
+                    file=thumb.name,
+                    directory=f'{project_name}/thumbs',
+                    name_on_storage=thumbnail_name
                 )
 
     @method_decorator(csrf_exempt)
@@ -370,6 +620,15 @@ class MinIOWebhook(Connector, TemplateView):
             case 's3:ObjectCreated:Put':
                 if (message['Key'].endswith('.png')) and ('thumb' not in message['Key'].lower()):
                     task = Thread(target=self.thumbnail_handler, args=(message['Key'],))
+                    task.daemon = True
+                    task.start()
+                elif message['Key'].endswith('.csv'):
+                    task = Thread(target=self.text_preview_handler, args=(message['Key'],))
+                    task.daemon = True
+                    task.start()
+            case 's3:ObjectCreated:CompleteMultipartUpload':
+                if message['Key'].endswith('.mp4'):
+                    task = Thread(target=self.video_preview_handler, args=(message['Key'],))
                     task.daemon = True
                     task.start()
             case _:

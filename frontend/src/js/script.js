@@ -65,6 +65,10 @@ let cursorIn3D = false;
 let isMouseDown = false;
 let hoverId;
 
+//query points
+let octahedron2d;
+let octahedron3d;
+
 // slider
 let sliderPos = window.innerWidth / 4;
 
@@ -74,17 +78,25 @@ let progressField;
 let classparams;
 // tooltip
 let tooltip_template = document.createRange().createContextualFragment(`
-<div id="tooltip" class="noselect" style="display: none; position: absolute; pointer-events: none; font-size: 14px; width: 300px; text-align: left; padding: 12px; background: #f8f8f8; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); font-family: 'Arial', sans-serif; border-radius: 8px;">
-  <div id="point_tip" style="font-weight: bold; margin-bottom: 8px;"></div>
-  <div id="group_tip" style="padding: 4px;">
-      <img id="tooltipImage" style="width: 100%; height: auto; border-radius: 4px;" src="" alt="Thumbnail">
-  </div>
-</div>`);
-document.body.append(tooltip_template);
+    <div id="tooltip" class="noselect" style="display: none; position: absolute; pointer-events: auto; font-size: 14px; width: 300px; text-align: left; padding: 12px; background: #f8f8f8; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); font-family: 'Arial', sans-serif; border-radius: 8px;">
+      <div id="point_tip" style="font-weight: bold; margin-bottom: 8px;"></div>
+      <div id="group_tip" style="padding: 4px;">
+          <img id="tooltipImage" style="width: 100%; height: auto; border-radius: 4px; display: none;" src="" alt="Thumbnail">
+          <div id="tooltipText" style="display: none; max-height: 150px; overflow-y: auto;"></div>
+      </div>
+    </div>`);
+document.body.appendChild(tooltip_template);
+    
+    
 let tooltip_state = { display: "none" }
 let $tooltip = document.querySelector('#tooltip');
 let $point_tip = document.querySelector('#point_tip');
 let tooltipImage = document.getElementById('tooltipImage');
+
+$tooltip.addEventListener('wheel', function(event) {
+    event.preventDefault();
+    event.stopPropagation();
+}, { passive: false });
 
 let maxCoordinate = 0;
 // find largest point
@@ -324,6 +336,10 @@ function initCursorGUI() {
         // update grids
 
         layoutScale = maxCoordinate * scale * 2;
+
+        // update the query point
+
+        // init grids
         initGrids();
     });
 
@@ -347,7 +363,7 @@ function initCameras() {
         1000,
     );
     //camera2D.position.set(layoutScale, layoutScale, layoutScale);
-    camera2D.position.set(0, 50, 0);
+    camera2D.position.set(0, 20, 0);
     camera2D.lookAt(0, 0, 0 );
 
     camera3D = new THREE.PerspectiveCamera(
@@ -694,34 +710,41 @@ function updateTooltip() {
     $tooltip.style.left = tooltip_state.left + 'px';
     $tooltip.style.top = tooltip_state.top + 'px';
     $point_tip.innerText = tooltip_state.name;
-    $point_tip.style.background = 0xffffff;
+
+    if (tooltip_state.type === 'image') {
+        tooltipImage.src = tooltip_state.content;
+        tooltipImage.style.display = 'block';
+        tooltipText.style.display = 'none';
+    } else if (tooltip_state.type === 'text') {
+        tooltipText.innerText = tooltip_state.content;
+        tooltipText.style.display = 'block';
+        tooltipImage.style.display = 'none';
+    }
 }
+
 function showTooltip(mouse_position, instanceId) {
     let datapoint = data3d[instanceId];
-    let thumbnail_path = datapoint["thumbnail_reference"];
+    let file_path = datapoint["preview"];
 
     if (hoverId !== instanceId) {
         hoverId = instanceId;
 
-        loadMinioImage(minioBucket, thumbnail_path)
-            .then((objectUrl) => {
+        loadMinioData(minioBucket, file_path)
+            .then((result) => {
                 tooltip_state.display = "block";
                 tooltip_state.name = "Showing Object " + instanceId;
+                tooltip_state.content = result.content;
+                tooltip_state.type = result.type;
 
-                // Set the image source in the tooltip
-                tooltipImage.src = objectUrl;
-
-                // Show the tooltip
                 updateTooltip();
             })
             .catch((error) => {
-                // Handle errors
-                console.error('Error loading Minio image:', error);
+                console.error('Error loading Minio data:', error);
             });
     }
 }
 
-function loadMinioImage(bucketName, objectName) {
+function loadMinioData(bucketName, objectName) {
     return new Promise((resolve, reject) => {
         minioClient.getObject(bucketName, objectName, function (err, dataStream) {
             if (err) {
@@ -733,18 +756,22 @@ function loadMinioImage(bucketName, objectName) {
             let chunks = [];
 
             dataStream.on('data', function (chunk) {
-                // Collect chunks of data
                 chunks.push(chunk);
             });
 
             dataStream.on('end', function () {
-                // Combine the chunks and create a Data URL for the image
-                let imageData = Buffer.concat(chunks);
-                let base64Image = imageData.toString('base64');
-                let dataUrl = 'data:image/png;base64,' + base64Image;
+                let fileData = Buffer.concat(chunks);
 
-                // Resolve the promise with the Data URL
-                resolve(dataUrl);
+                if (objectName.endsWith('.png') || objectName.endsWith('.jpg') || objectName.endsWith('.jpeg')) {
+                    let base64Image = fileData.toString('base64');
+                    let dataUrl = 'data:image/png;base64,' + base64Image;
+                    resolve({ type: 'image', content: dataUrl });
+                } else if (objectName.endsWith('.txt')) {
+                    let textContent = fileData.toString('utf8');
+                    resolve({ type: 'text', content: textContent });
+                } else {
+                    reject(new Error('Unsupported file type'));
+                }
             });
 
             dataStream.on('error', function (err) {
@@ -781,3 +808,83 @@ function handleSaveAnnotationsClick() {
         console.error('There was a problem with the request:', error);
       });
 }
+
+document.getElementById('inputForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const formData = new FormData();
+    formData.append('requestType', 'query')
+    formData.append('project', data2d[0]['project_name'])
+    formData.append('model', data2d[0]['model'])
+
+    const textInput = document.getElementById('textInput').value;
+    const imageInput = document.getElementById('imageInput').files[0];
+
+    if (textInput) {
+        formData.append('textInput', textInput);
+    }
+
+    if (imageInput) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            formData.append('imageInput', imageInput);
+            sendRequest(formData);
+        };
+        reader.readAsDataURL(imageInput);
+    } else {
+        sendRequest(formData);
+    }
+
+function sendRequest(formData) {
+    const csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
+    fetch('/gui/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Handle success
+        scene2D.remove(octahedron2d);
+        scene3D.remove(octahedron3d);
+
+        const queryPoint2d = data['2d_embedding'];
+        const queryPoint3d = data['3d_embedding'];
+
+        const queryGeometry = new THREE.OctahedronGeometry(1);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // red color (optional)
+        
+        octahedron2d = new THREE.Mesh(queryGeometry, material);
+        octahedron3d = new THREE.Mesh(queryGeometry, material);
+
+        octahedron2d.position.set(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
+        octahedron3d.position.set(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale);
+
+        scene2D.add(octahedron2d);
+        scene3D.add(octahedron3d);
+
+        // set cameras
+        let frustum = new THREE.Frustum()
+        let frustum_matrix = new THREE.Matrix4().multiplyMatrices(camera2D.projectionMatrix, camera2D.matrixWorldInverse);
+        //2D
+        camera2D.position.set(queryPoint2d[0] * scale, camera2D.position.y, queryPoint2d[1] * scale);
+        camera2D.lookAt(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
+
+        controls2D.target.set(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale); // Reset the target to the center or desired point.
+        controls2D.update();
+
+        //3D
+        camera3D.lookAt(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale);
+
+        controls3D.target.set(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale); // Reset the target to the center or desired point.
+        controls3D.update();
+
+        render();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        // Handle error
+    });
+}
+});
