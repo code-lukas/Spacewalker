@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-import pickle
+import os
+import joblib
 import tritonclient.utils
 from django.core import serializers
 from django.contrib import messages
@@ -177,7 +178,7 @@ class guiView(Connector, TemplateView):
                     file_path=dr_method.name
                 )
                 with open(dr_method.name, 'rb') as f:
-                    save_data = pickle.load(f)
+                    save_data = joblib.load(f)
                 query2d = save_data['dr_method'].transform(embedding)
                 query2d /= float(save_data['scale_val'])
 
@@ -188,7 +189,7 @@ class guiView(Connector, TemplateView):
                         file_path=dr_method.name
                     )
                     with open(dr_method.name, 'rb') as f:
-                        save_data = pickle.load(f)
+                        save_data = joblib.load(f)
                     query3d = save_data['dr_method'].transform(embedding)
                     query3d /= float(save_data['scale_val'])
 
@@ -457,18 +458,20 @@ class InferenceSettingsView(Connector, TemplateView):
         scale_val_2d = np.max(proj2d)
 
         # dr2d = (dr2d / np.linalg.norm(dr2d)) * scale
-        with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr2d_save:
+        with NamedTemporaryFile(mode='wb', suffix='.pkl', delete=False) as dr2d_save:
             save_data = {
                 'dr_method': dr2d,
                 'scale_val': scale_val_2d
             }
-            pickle.dump(save_data, dr2d_save)
-            self.minio_client.send_to_bucket(
-                bucket_name='spacewalker-projects',
-                file=dr2d_save.name,
-                directory=f'{project}/dr',
-                name_on_storage='dr2d.pkl'
-            )
+            joblib.dump(save_data, dr2d_save)
+
+        self.minio_client.send_to_bucket(
+            bucket_name='spacewalker-projects',
+            file=dr2d_save.name,
+            directory=f'{project}/dr',
+            name_on_storage='dr2d.pkl'
+        )
+        os.remove(dr2d_save.name)
 
         if dr_method.lower() == 'hnne':
             proj3d = dr3d.fit_transform(x, dim=3)
@@ -479,18 +482,20 @@ class InferenceSettingsView(Connector, TemplateView):
         scale_val_3d = np.max(proj3d)
 
         # dr3d = (dr3d / np.linalg.norm(dr3d)) * scale
-        with NamedTemporaryFile(mode='wb', suffix='.pkl') as dr3d_save:
+        with NamedTemporaryFile(mode='wb', suffix='.pkl', delete=False) as dr3d_save:
             save_data = {
                 'dr_method': dr3d,
                 'scale_val': scale_val_3d
             }
-            pickle.dump(save_data, dr3d_save)
-            self.minio_client.send_to_bucket(
-                bucket_name='spacewalker-projects',
-                file=dr3d_save.name,
-                directory=f'{project}/dr',
-                name_on_storage='dr3d.pkl'
-            )
+            joblib.dump(save_data, dr3d_save)
+
+        self.minio_client.send_to_bucket(
+            bucket_name='spacewalker-projects',
+            file=dr3d_save.name,
+            directory=f'{project}/dr',
+            name_on_storage='dr3d.pkl'
+        )
+        os.remove(dr3d_save.name)
 
         proj2d = (proj2d / scale_val_2d) * scale
         proj3d = (proj3d / scale_val_3d) * scale
