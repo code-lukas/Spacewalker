@@ -631,6 +631,10 @@ class MinIOWebhook(Connector, TemplateView):
                     task = Thread(target=self.video_preview_handler, args=(message['Key'],))
                     task.daemon = True
                     task.start()
+                elif message['Key'].endswith('.csv'):
+                    task = Thread(target=self.text_preview_handler, args=(message['Key'],))
+                    task.daemon = True
+                    task.start()
             case _:
                 pass
         return HttpResponse(200)
