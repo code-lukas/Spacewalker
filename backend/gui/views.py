@@ -24,7 +24,8 @@ import cv2 as cv
 # from minio.select import CSVInputSerialization, CSVOutputSerialization, SelectRequest
 from .models import DataPoint, AnnotationColorDescription
 import multiprocessing as mp
-from sklearn.manifold import TSNE, MDS, Isomap
+from sklearn.manifold import MDS, Isomap
+from openTSNE import TSNE
 from sklearn.decomposition import PCA
 from ..services.triton_inference import triton_inference, triton_inference_text
 from ..services.minio_interface import MinioClient
