@@ -25,6 +25,7 @@ import cv2 as cv
 from .models import DataPoint, AnnotationColorDescription
 import multiprocessing as mp
 from sklearn.manifold import MDS, Isomap
+from umap import UMAP
 from openTSNE import TSNE
 from sklearn.decomposition import PCA
 from ..services.triton_inference import triton_inference, triton_inference_text
@@ -434,12 +435,15 @@ class InferenceSettingsView(Connector, TemplateView):
             case 'hnne':
                 dr2d = HNNE(dim=2)
                 dr3d = HNNE(dim=3)
+            case 'umap':
+                dr2d = UMAP(n_components=2, n_jobs=-1)
+                dr3d = UMAP(n_components=3, n_jobs=-1)
             case 'pca':
                 dr2d = PCA(n_components=2)
                 dr3d = PCA(n_components=3)
             case 't-sne':
                 dr2d = TSNE(n_components=2, n_jobs=-1)
-                dr3d = TSNE(n_components=3, n_jobs=-1)
+                dr3d = TSNE(n_components=3, n_jobs=-1, negative_gradient_method='bh')
             case 'mds':
                 dr2d = MDS(n_components=2, normalized_stress='auto', n_jobs=-1)
                 dr3d = MDS(n_components=3, normalized_stress='auto', n_jobs=-1)

@@ -19,6 +19,7 @@ DR_METHODS = [
     ('T-SNE', 'T-SNE'),
     ('MDS', 'MDS'),
     ('ISOMAP', 'ISOMAP'),
+    ('UMAP', 'UMAP'),
 ]
 MODALITIES = [
     ('image', 'Image'),
