@@ -628,7 +628,11 @@ class MinIOWebhook(Connector, TemplateView):
         message = json.loads(request.body)
         match message['EventName']:
             case 's3:ObjectCreated:Put':
-                if (message['Key'].endswith('.png')) and ('thumb' not in message['Key'].lower()):
+                if (
+                        message['Key'].lower().endswith('.png')
+                        or message['Key'].lower().endswith('.jpg')
+                        or message['Key'].lower().endswith('.jpeg')
+                ) and ('thumb' not in message['Key'].lower()):
                     task = Thread(target=self.thumbnail_handler, args=(message['Key'],))
                     task.daemon = True
                     task.start()
