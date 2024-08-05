@@ -454,12 +454,12 @@ class InferenceSettingsView(Connector, TemplateView):
                 raise RuntimeError(f'Dimensionality reduction method {dr_method} unknown')
         scale = 1
         # NOTE: This line will fail if there are too few datapoints!
-        # if dr_method.lower() == 'hnne':
-        #     proj2d = dr2d.fit_transform(x, dim=2)
-        # else:
-        # dr2d = dr2d.fit(x)
-        dr2d.fit(x)
-        proj2d = dr2d.transform(x)
+        if dr_method.lower() == 'hnne':
+            dr2d.fit(x, dim=2)
+            proj2d = dr2d.transform(x)
+        else:
+            dr2d = dr2d.fit(x)
+            proj2d = dr2d.transform(x)
 
         scale_val_2d = np.max(proj2d)
 
@@ -479,12 +479,12 @@ class InferenceSettingsView(Connector, TemplateView):
         )
         os.remove(dr2d_save.name)
 
-        # if dr_method.lower() == 'hnne':
-        #     proj3d = dr3d.fit_transform(x, dim=3)
-        # else:
-        # dr3d = dr3d.fit(x)
-        dr3d.fit(x)
-        proj3d = dr3d.transform(x)
+        if dr_method.lower() == 'hnne':
+            dr3d.fit(x, dim=3)
+            proj3d = dr3d.transform(x)
+        else:
+            dr3d = dr3d.fit(x)
+            proj3d = dr3d.transform(x)
 
         scale_val_3d = np.max(proj3d)
 
