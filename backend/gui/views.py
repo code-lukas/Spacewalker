@@ -67,7 +67,7 @@ def resize_longest_edge(img: np.array, longest_edge: int) -> np.array:
     else:
         new_h = int((longest_edge / w) * h)
         new_w = longest_edge
-    return cv.resize(img, (new_h, new_w), interpolation=cv.INTER_CUBIC)
+    return cv.resize(img, (new_w, new_h), interpolation=cv.INTER_CUBIC)
 
 
 def prepare_image_for_inference(image: np.array, model: str):
