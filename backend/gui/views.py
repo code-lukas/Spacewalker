@@ -237,12 +237,25 @@ class configurationView(Connector, TemplateView):
 
         if form.is_valid():
             project_name = request.POST['project_name']
+
+            fn = files[0]['fp'].lower()
+            if fn.endswith('.png'):
+                mime_type = 'image/png'
+            elif (fn.endswith('.jpg')) or (fn.endswith('.jpeg')):
+                mime_type = 'image/jpeg'
+            elif fn.endswith('.csv'):
+                mime_type = 'text/csv'
+            else:
+                mime_type = 'application/octet-stream'
+
             for file in files:
                 self.minio_client.send_to_bucket(
                     bucket_name='spacewalker-projects',
                     file=file['fp'],
                     directory=f'{project_name}/raw',
-                    name_on_storage=file['name']
+                    name_on_storage=file['name'],
+                    content_type=mime_type,
+
                 )
             messages.success(request, 'Submission successful!')
         else:
@@ -378,7 +391,8 @@ class InferenceSettingsView(Connector, TemplateView):
                         self.minio_client.client.fget_object(
                             bucket_name='spacewalker-projects',
                             object_name=file,
-                            file_path=temporary_video.name
+                            file_path=temporary_video.name,
+                            content_type='video/mp4'
                         )
                         # get frames to build batch
                         video = cv.VideoCapture(temporary_video.name)
@@ -571,7 +585,8 @@ class MinIOWebhook(Connector, TemplateView):
                     bucket_name='spacewalker-projects',
                     file=thumb.name,
                     directory=f'{project_name}/thumbs',
-                    name_on_storage=thumbnail_name
+                    name_on_storage=thumbnail_name,
+                    content_type='image/png'
                 )
 
     def text_preview_handler(self, fn: str):
@@ -592,7 +607,8 @@ class MinIOWebhook(Connector, TemplateView):
                         bucket_name='spacewalker-projects',
                         file=txt.name,
                         directory=f'{project_name}/thumbs',
-                        name_on_storage=f'{row.Id}.txt'
+                        name_on_storage=f'{row.Id}.txt',
+                        content_type='text/plain'
                     )
 
     def video_preview_handler(self, fn: str):
@@ -616,7 +632,8 @@ class MinIOWebhook(Connector, TemplateView):
                     bucket_name='spacewalker-projects',
                     file=thumb.name,
                     directory=f'{project_name}/thumbs',
-                    name_on_storage=thumbnail_name
+                    name_on_storage=thumbnail_name,
+                    content_type='image/png'
                 )
 
     @method_decorator(csrf_exempt)

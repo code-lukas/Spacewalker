@@ -25,6 +25,7 @@ class MinioClient:
             file: str,
             directory: str = None,
             name_on_storage: str = None,
+            **kwargs
     ) -> None:
         """Sends a file to an existing bucket"""
 
@@ -35,5 +36,6 @@ class MinioClient:
         self.client.fput_object(
             bucket_name=bucket_name,
             object_name=name_on_storage,
-            file_path=file
+            file_path=file,
+            **kwargs
         )
