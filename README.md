@@ -5,6 +5,6 @@ run command:
 parcel:
 - open devcontainer
 - `cd frontend`
-- `npx parcel ./src/index.html --dist-dir=/workspaces/SpaceWalkerGUI/backend/static/frontend`
+- `npx parcel ./src/index.html --dist-dir=/workspaces/SpaceWalker/backend/static/frontend`
 
 Upon saving, changes to the frontend code are applied
