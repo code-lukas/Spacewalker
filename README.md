@@ -1,4 +1,4 @@
-# Spacewalker - Traversing Representations Spaces for Fast Interactive Exploration and Annotation of Unstructured Data
+# Spacewalker
 
 __Disclaimer: Do not use the version "as is" in production. This repository uses unsafe, dummy access credentials for Postgres and MinIO to showcase its functionality.__
 
