@@ -11,7 +11,7 @@ Please switch to the `development` branch for the latest features.
 ## Getting started
 
 - Clone / download this repository
-- Download the `model_repository` folder and place it inside the root folder of this repository. The directory should look like this:
+- Download the `model_repository` folder ([link](https://drive.google.com/file/d/1uBhl4AGDSbxDxMzA2hMVwoC-MMO93nJw/view?usp=share_link)), unzip and place it inside the root folder of this repository. The directory should look like this:
 ```
 Spacewalker/
 ├── .devcontainer
