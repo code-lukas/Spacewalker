@@ -56,3 +56,19 @@ Frontend development:
 - open in .devcontainer
 - ```cd frontend```
 - ```npx parcel ./src/index.html --dist-dir=/workspaces/SpaceWalker/backend/static/frontend```
+
+## Citation
+If you use this work or dataset, please cite:
+```latex
+
+@misc{heine2024spacewalkertraversingrepresentationspaces,
+      title={Spacewalker: Traversing Representation Spaces for Fast Interactive Exploration and Annotation of Unstructured Data}, 
+      author={Lukas Heine and Fabian Hörst and Jana Fragemann and Gijs Luijten and Miriam Balzer and Jan Egger and Fin Bahnsen and M. Saquib Sarfraz and Jens Kleesiek and Constantin Seibold},
+      year={2024},
+      eprint={2409.16793},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2409.16793}, 
+}
+
+```
