@@ -9,10 +9,14 @@
 ## Overview
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Spacewalker demo" width="960"/>
+  <img src="docs/overview.png" alt="Spacewalker overview" width="960"/>
 </p>
 
 Spacewalker is a deep learning-based framework designed for interactive exploration and annotation of various data modalities, including images, text, and video. It leverages state-of-the-art models and dimensionality reduction methods to produce visualizations of the embedding space that users can explore interactively.
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Spacewalker demo" width="960"/>
+</p>
 
 ## Key Features
 - **Feature-Space based**: Explore how samples are related to each other and annotate directly in the reduced representation of the feature space!
