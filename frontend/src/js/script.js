@@ -10,7 +10,7 @@ import { Pane } from 'tweakpane';
 // Storage
 const Minio = require('minio');
 let minioClient = new Minio.Client({
-    endPoint: '0.0.0.0',
+    endPoint: 'localhost',
     port: 9000,
     accessKey: 'demo',
     secretKey: 'demodemo',

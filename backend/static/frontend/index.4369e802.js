@@ -594,7 +594,7 @@ var Buffer = require("eac16d9f83c95e73").Buffer;
 // Storage
 const Minio = require("a0f2d5c099ed2d14");
 let minioClient = new Minio.Client({
-    endPoint: "0.0.0.0",
+    endPoint: "localhost",
     port: 9000,
     accessKey: "demo",
     secretKey: "demodemo",
