@@ -36,9 +36,8 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc config host add storage http://minio:9000 demo demodemo;
-      /usr/bin/mc mb storage/spacewalker-projects;
       /usr/bin/mc alias set storage http://minio:9000 demo demodemo;
+      /usr/bin/mc mb storage/spacewalker-projects;
       /usr/bin/mc event add storage/spacewalker-projects arn:minio:sqs::DJANGO:webhook --event 'put,delete'
       "
 
