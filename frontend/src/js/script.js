@@ -3,27 +3,28 @@ GUI for project "Spacewalker"
 Authors: Fabian Hörst, Lukas Heine, Gijs Luijten, Miriam Balzer
  */
 
+console.log("hey there!");
+
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Pane } from 'tweakpane';
 
 // Storage
-const Minio = require('minio');
-let minioClient = new Minio.Client({
-    endPoint: 'localhost',
-    port: 9000,
-    accessKey: 'demo',
-    secretKey: 'demodemo',
-    useSSL: false,
-});
+// Remove direct MinIO client initialization
+// const Minio = require('minio');
+// let minioClient = new Minio.Client({
+//     endPoint: 'localhost',
+//     port: 9000,
+//     accessKey: 'demo',
+//     secretKey: 'demodemo',
+//     useSSL: false,
+// });
 const minioBucket = "spacewalker-projects";
 
 // Data
-let data2d = window.data2d;
 let data3d = window.data3d;
 
 // create deep copies
-let old_data2d;
 let old_data3d;
 updateBuffer();
 
@@ -38,39 +39,25 @@ const color = new THREE.Color();
 
 // Global display variables
 let renderer;
-let scene2D;
 let scene3D;
-let camera2D;
 let camera3D;
-let controls2D;
 let controls3D;
-let mesh2D;
 let mesh3D;
-let rollOverMesh2D;
 let rollOverMesh3D;
-let gridHelper2D;
 let gridHelper3D;
-let axesHelper2D;
 let axesHelper3D;
-let axesHelper2Dplane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 // raycast
 let raycaster3D;
-let raycaster2D;
 const mouse = new THREE.Vector2( 1, 1 );
 let paintColor = 0xffffff //0xff00000;
 let activeLabel = 0;
 let multiSelect = false;
-let cursorIn3D = false;
 let isMouseDown = false;
 let hoverId;
 
 //query points
-let octahedron2d;
 let octahedron3d;
-
-// slider
-let sliderPos = window.innerWidth / 4;
 
 // GUI / Menu Pane
 let pane;
@@ -101,9 +88,6 @@ $tooltip.addEventListener('wheel', function(event) {
 
 let maxCoordinate = 0;
 // find largest point
-data2d.forEach(point => {
-    maxCoordinate = Math.max(maxCoordinate, Math.abs(point.x), Math.abs(point.y));
-});
 data3d.forEach(point => {
     maxCoordinate = Math.max(maxCoordinate, Math.abs(point.x), Math.abs(point.y), Math.abs(point.z));
 });
@@ -115,14 +99,12 @@ let menuHeight = 300;
 
 function updateBuffer(){
     // update buffer
-    old_data2d = JSON.parse(JSON.stringify(data2d));
     old_data3d = JSON.parse(JSON.stringify(data3d));
 }
 
 function KeyPress(e) {
     var evtobj = window.event? event : e
     if (evtobj.keyCode == 90 && evtobj.ctrlKey) {
-        data2d = JSON.parse(JSON.stringify(old_data2d));
         data3d = JSON.parse(JSON.stringify(old_data3d));
         initMeshes();
     };
@@ -131,47 +113,20 @@ document.onkeydown = KeyPress;
 
 
 function getProgress(){
-let count = data2d.filter(item => item.cluster_id !== 0).length;
-return `${count} / ${data2d.length} (${Math.round((count/data2d.length)*100)} %)`;
+let count = data3d.filter(item => item.cluster_id !== 0).length;
+return `${count} / ${data3d.length} (${Math.round((count/data3d.length)*100)} %)`;
 }
 
 // Initialize and run the application
 init();
 
-document.addEventListener('mousemove', (event) => {
-    if (event.clientX < sliderPos) {
-        controls2D.enabled = true;
-        controls3D.enabled = false; 
-        cursorIn3D = false;
-    } else {
-        controls2D.enabled = false;
-        controls3D.enabled = true;
-        cursorIn3D = true;
-    }
-});
 document.addEventListener('contextmenu', (event) => {
     event.preventDefault();
   });
 document.addEventListener( 'mousemove', onMouseMove );
 document.addEventListener( 'mousedown', onRMBClick );
 document.addEventListener( 'mouseup', onRMBRelease );
-
-document.getElementById('text2d').addEventListener('click', function() {
-    // Move slider to the far right (100% - slider's width to account for its size)
-    document.getElementById('slider').style.left = `calc(100% - ${0.5*document.getElementById('slider').offsetWidth}px)`;
-    sliderPos = window.innerWidth;
-});
-
-document.getElementById('text3d').addEventListener('click', function() {
-    // Move slider to the far right (100% - slider's width to account for its size)
-    document.getElementById('slider').style.left = `calc(0% - ${0.5*document.getElementById('slider').offsetWidth}px)`;
-    sliderPos = 0;
-});
-
 window.addEventListener('resize', function() {
-// Resize for 2D
-camera2D.aspect = window.innerWidth / window.innerHeight;
-camera2D.updateProjectionMatrix();
 
 // Resize for 3D
 camera3D.aspect = window.innerWidth / window.innerHeight;
@@ -187,17 +142,12 @@ renderer.setAnimationLoop(animate);
 function init() {
 
     // Create a Scene
-    scene2D = new THREE.Scene();
-    scene2D.background = new THREE.Color( 0x404040 );
     scene3D = new THREE.Scene();
     scene3D.background = new THREE.Color( 0x161616 );
     
     // init renderer
     initRenderer();
     
-    // init slider
-    initSlider();
-
     // init scene settings like cameras, controls, grids, meshes, and  lights
     initCameras();
     initControls();
@@ -314,11 +264,8 @@ function initClassSettingsGUI() {
                 paintColor = Number("0x" + selectedLabel.color.slice(1));
                 activeLabel = Number(selectedLabel.class_id);
                 // update color of rollovermeshes
-                scene2D.remove(rollOverMesh2D);
                 scene3D.remove(rollOverMesh3D);
-                rollOverMesh2D.material.color.set(paintColor);
                 rollOverMesh3D.material.color.set(paintColor);
-                scene2D.add(rollOverMesh2D);
                 scene3D.add(rollOverMesh3D);
             }
         }
@@ -331,7 +278,6 @@ function initCursorGUI() {
         Scale: 1,
         Multiselect: false,
         Point_scaling: 5,
-        color_2D: '#404040',
         color_3D: '#161616',
     };
 
@@ -347,7 +293,6 @@ function initCursorGUI() {
         speed: 5,
     }).on("change", (ev) => {
         rollOverScale = parseInt(ev.value);
-        rollOverMesh2D.scale.setScalar(rollOverScale);
         rollOverMesh3D.scale.setScalar(rollOverScale);
     });
 
@@ -371,10 +316,6 @@ function initCursorGUI() {
         initGrids();
     });
 
-    folder_annotation.addBinding(cursorparams, 'color_2D').on("change", (ev) => {
-        scene2D.background = new THREE.Color(ev.value);
-    });
-
     folder_annotation.addBinding(cursorparams, 'color_3D').on("change", (ev) => {
         scene3D.background = new THREE.Color(ev.value);
     });
@@ -382,19 +323,6 @@ function initCursorGUI() {
 
 // Three JS initialization
 function initCameras() {
-    camera2D = new THREE.OrthographicCamera(
-        window.innerWidth / - 2,
-        window.innerWidth / 2 ,
-        window.innerHeight / 2,
-        window.innerHeight / - 2,
-        1,
-        1000,
-    );
-    //camera2D.position.set(layoutScale, layoutScale, layoutScale);
-    camera2D.position.set(0, 500, 0);
-    camera2D.zoom = 10;
-    camera2D.lookAt(0, 0, 0 );
-
     camera3D = new THREE.PerspectiveCamera(
         60,
         window.innerWidth / window.innerHeight,
@@ -407,14 +335,6 @@ function initCameras() {
 }
 
 function initControls() {
-    controls2D = new OrbitControls( camera2D, renderer.domElement );
-    controls2D.enableRotate = false;
-    controls2D.mouseButtons = {
-        LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.PAN,
-    };
-    controls2D.update();
-
     controls3D = new OrbitControls( camera3D, renderer.domElement );
     controls3D.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
@@ -424,14 +344,6 @@ function initControls() {
 }
 
 function initGrids() {
-    scene2D.remove( gridHelper2D );
-    scene2D.remove( axesHelper2D );
-    // 2D grid
-    gridHelper2D = new THREE.GridHelper(layoutScale, layoutScale / 10);
-    scene2D.add( gridHelper2D );
-    axesHelper2D = new THREE.AxesHelper( layoutScale / 2 );
-    scene2D.add( axesHelper2D );
-
     scene3D.remove( gridHelper3D );
     scene3D.remove( axesHelper3D );
     // 3D grid
@@ -442,14 +354,6 @@ function initGrids() {
 }
 
 function initLights() {
-    let light2D = new THREE.HemisphereLight(
-        0xffffff, // bright sky color
-        0x888888, // dim ground color
-        3 // intensity
-    );
-    light2D.position.set( 0, 1, 0 );
-    scene2D.add( light2D );
-
     let light3D = new THREE.HemisphereLight(
         0xffffff, // bright sky color
         0x888888, // dim ground color
@@ -460,7 +364,6 @@ function initLights() {
 }
 
 function initRaycaster() {
-    raycaster2D = new THREE.Raycaster();
     raycaster3D = new THREE.Raycaster();
 }
 
@@ -471,75 +374,9 @@ function initRenderer() {
     document.body.appendChild(renderer.domElement);
 }
 
-// Slider
-function initSlider() {
-    const slider = document.querySelector('#slider');
-
-    /**
-     * Event handler for the pointerdown event.
-     * Disables 3D and 2D controls and adds event listeners for pointermove and pointerup events.
-     */
-    function onPointerDown(e) {
-        if (e.isPrimary === false) return;
-        controls3D.enabled = false;
-        controls2D.enabled = false;
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp);
-    }
-
-    /**
-     * Event handler for the pointerup event.
-     * Enables 3D controls and removes event listeners for pointermove and pointerup events.
-     */
-    function onPointerUp() {
-        controls3D.enabled = true;
-        controls2D.enabled = false;
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUp);
-    }
-
-    /**
-     * Event handler for the pointermove event.
-     * Updates the position of the slider based on the pointer's x-coordinate.
-     */
-    function onPointerMove(e) {
-        if (e.isPrimary === false) return;
-        sliderPos = Math.max(0, Math.min(window.innerWidth, e.pageX));
-        slider.style.left = sliderPos - (slider.offsetWidth / 2) + 'px';
-        // text3D.style.left = sliderPos + 80 + 'px';
-    }
-
-    slider.style.touchAction = 'none';
-    slider.addEventListener('pointerdown', onPointerDown);
-}
-
 function initMeshes() {
-    scene2D.remove(mesh2D);
-    scene2D.remove(rollOverMesh2D);
     scene3D.remove(mesh3D);
     scene3D.remove(rollOverMesh3D);
-
-    // 2D Mesh
-    let geometry2D = new THREE.IcosahedronGeometry(0.5, 3);
-    let material2D = new THREE.MeshPhongMaterial({ color: 0xffffff });
-    mesh2D = new THREE.InstancedMesh(geometry2D, material2D, data2d.length);
-    let matrix2D = new THREE.Matrix4();
-    data2d.forEach(function (element, idx) {
-        matrix2D.setPosition(element.x * scale, element.z * scale, element.y * scale);
-        mesh2D.setMatrixAt(idx, matrix2D);
-        let labelColor = labels.find(item => item.class_id === element.cluster_id)['color'];
-        labelColor = new THREE.Color( labelColor )
-        mesh2D.setColorAt(idx, labelColor);
-    }); 
-    mesh2D.receiveShadow = true;
-    scene2D.add(mesh2D);
-    
-    // 2D selector mesh
-    let selectorGeometry2D = new THREE.SphereGeometry(1);
-    let selectorMaterial2D = new THREE.MeshBasicMaterial({ color: paintColor, opacity: 0.2, transparent: true });
-    rollOverMesh2D = new THREE.Mesh(selectorGeometry2D, selectorMaterial2D);
-    rollOverMesh2D.scale.setScalar(rollOverScale);
-    scene2D.add(rollOverMesh2D);
 
     //3D Mesh
     let geometry3D = new THREE.IcosahedronGeometry(0.5, 3);
@@ -569,18 +406,6 @@ function initMeshes() {
 
 // rendering 
 function render() {
-    // Render 2D scene (left)
-    renderer.setScissor(0, 0, window.innerWidth, window.innerHeight);
-    renderer.setScissorTest(true);
-    renderer.clear();
-    renderer.render(scene2D, camera2D);
-
-    // Clear depth buffer
-    renderer.clearDepth();
-
-    // Render 3D scene (right)
-    renderer.setScissor(sliderPos, 0, window.innerWidth, window.innerHeight);
-    renderer.setScissorTest(true);
     renderer.render(scene3D, camera3D);
 }
 
@@ -612,7 +437,6 @@ function onRMBRelease( event ) {
 
 
 function animate() {
-    if (cursorIn3D) {
         controls3D.update();
         raycaster3D.setFromCamera( mouse, camera3D );
         const intersection3D = raycaster3D.intersectObject( mesh3D );
@@ -635,102 +459,18 @@ function animate() {
 
                     if (position.distanceTo(rollOverMesh3D.position) < rollOverMesh3D.scale.x) {
                         mesh3D.setColorAt( i, color.setHex( paintColor ) );
-                        mesh2D.setColorAt( i, color.setHex( paintColor ) );
-
                         data3d[i]['cluster_id'] = activeLabel;
-                        data2d[i]['cluster_id'] = activeLabel;
-
-                        mesh3D.instanceColor.needsUpdate = true;
-                        mesh2D.instanceColor.needsUpdate = true;
-                    }
-                }
-                }
-            else {
-                    mesh3D.setColorAt( instanceId, color.setHex( paintColor ) );
-                    mesh2D.setColorAt( instanceId, color.setHex( paintColor ) );
-
-                    data3d[instanceId]['cluster_id'] = activeLabel;
-                    data2d[instanceId]['cluster_id'] = activeLabel;
-
-                    mesh3D.instanceColor.needsUpdate = true;
-                    mesh2D.instanceColor.needsUpdate = true;
-                }
-            }
-        }
-    }
-    else {
-        controls2D.update();
-        raycaster2D.setFromCamera( mouse, camera2D );
-
-        // Intersection with the 2D plane
-        const planeIntersection = new THREE.Vector3();
-        if (raycaster2D.ray.intersectPlane(axesHelper2Dplane, planeIntersection)) {
-            rollOverMesh2D.position.set(planeIntersection.x, planeIntersection.y, planeIntersection.z);
-            if (isMouseDown && !isMouseInsidePanel){
-                if (multiSelect){
-                for (let i = 0; i < mesh2D.count; i++) {
-                    const matrix = new THREE.Matrix4();
-                    mesh2D.getMatrixAt(i, matrix);
-
-                    const position = new THREE.Vector3();
-                    position.setFromMatrixPosition(matrix);
-
-                    if (position.distanceTo(rollOverMesh2D.position) < rollOverMesh2D.scale.x) {
-                        mesh2D.setColorAt( i, color.setHex( paintColor ) );
-                        mesh3D.setColorAt( i, color.setHex( paintColor ) );
-                        
-                        data3d[i]['cluster_id'] = activeLabel;
-                        data2d[i]['cluster_id'] = activeLabel;
-
-                        mesh2D.instanceColor.needsUpdate = true;
-                        mesh3D.instanceColor.needsUpdate = true;
-                    }
-                }
-                }
-            }
-        }
-        const intersection2D = raycaster2D.intersectObject( mesh2D );
-
-        if ((intersection2D.length > 0)){
-            const instanceId = intersection2D[0].instanceId;
-            const mouse_position = [mouse.x, mouse.y]
-
-            rollOverMesh2D.position.set(intersection2D[0].point.x, intersection2D[0].point.y, intersection2D[0].point.z)
-            showTooltip(mouse_position, instanceId);
-            if (isMouseDown && !isMouseInsidePanel){
-                if (multiSelect){
-                for (let i = 0; i < mesh2D.count; i++) {
-                    const matrix = new THREE.Matrix4();
-                    mesh2D.getMatrixAt(i, matrix);
-
-                    const position = new THREE.Vector3();
-                    position.setFromMatrixPosition(matrix);
-
-                    if (position.distanceTo(rollOverMesh2D.position) < rollOverMesh2D.scale.x) {
-                        mesh2D.setColorAt( i, color.setHex( paintColor ) );
-                        mesh3D.setColorAt( i, color.setHex( paintColor ) );
-                        
-                        data3d[i]['cluster_id'] = activeLabel;
-                        data2d[i]['cluster_id'] = activeLabel;
-
-                        mesh2D.instanceColor.needsUpdate = true;
                         mesh3D.instanceColor.needsUpdate = true;
                     }
                 }
                 }
             else {
-                    mesh2D.setColorAt( instanceId, color.setHex( paintColor ) );
                     mesh3D.setColorAt( instanceId, color.setHex( paintColor ) );
-
                     data3d[instanceId]['cluster_id'] = activeLabel;
-                    data2d[instanceId]['cluster_id'] = activeLabel;
-
-                    mesh2D.instanceColor.needsUpdate = true;
                     mesh3D.instanceColor.needsUpdate = true;
                 }
             }
         }
-    }
     // update progress
     classparams.Progress = getProgress();
     progressField.value = getProgress();
@@ -780,38 +520,31 @@ function showTooltip(mouse_position, instanceId) {
 
 function loadMinioData(bucketName, objectName) {
     return new Promise((resolve, reject) => {
-        minioClient.getObject(bucketName, objectName, function (err, dataStream) {
-            if (err) {
-                console.error(err);
-                reject(err);
-                return;
+        const csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
+        const formData = new FormData();
+        formData.append('requestType', 'minio_data');
+        formData.append('bucket', bucketName);
+        formData.append('object', objectName);
+
+        fetch('/gui/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': csrfToken
             }
-
-            let chunks = [];
-
-            dataStream.on('data', function (chunk) {
-                chunks.push(chunk);
-            });
-
-            dataStream.on('end', function () {
-                let fileData = Buffer.concat(chunks);
-
-                if (objectName.endsWith('.png') || objectName.endsWith('.jpg') || objectName.endsWith('.jpeg')) {
-                    let base64Image = fileData.toString('base64');
-                    let dataUrl = 'data:image/png;base64,' + base64Image;
-                    resolve({ type: 'image', content: dataUrl });
-                } else if (objectName.endsWith('.txt')) {
-                    let textContent = fileData.toString('utf8');
-                    resolve({ type: 'text', content: textContent });
-                } else {
-                    reject(new Error('Unsupported file type'));
-                }
-            });
-
-            dataStream.on('error', function (err) {
-                console.error(err);
-                reject(err);
-            });
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            resolve(data);
+        })
+        .catch(error => {
+            console.error('Error loading MinIO data:', error);
+            reject(error);
         });
     });
 }
@@ -820,14 +553,14 @@ function loadMinioData(bucketName, objectName) {
 function handleSaveAnnotationsClick() {
     const csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
     // Maybe consider just passing the labels instead of the whole json
-    // We only have to return data2d, since we only need the combination of filename and class once
+    // We only have to return data3d, since we only need the combination of filename and class once
     fetch('/gui/', {
         method: 'POST',
         headers: {
           'X-CSRFToken': csrfToken,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(data2d)
+        body: JSON.stringify(data3d)
       })
       .then(response => {
         if (!response.ok) {
@@ -847,8 +580,8 @@ document.getElementById('inputForm').addEventListener('submit', function(event) 
     event.preventDefault();
     const formData = new FormData();
     formData.append('requestType', 'query')
-    formData.append('project', data2d[0]['project_name'])
-    formData.append('model', data2d[0]['model'])
+    formData.append('project', data3d[0]['project_name'])
+    formData.append('model', data3d[0]['model'])
 
     const textInput = document.getElementById('textInput').value;
     const imageInput = document.getElementById('imageInput').files[0];
@@ -880,30 +613,18 @@ function sendRequest(formData) {
     .then(response => response.json())
     .then(data => {
         // Handle success
-        scene2D.remove(octahedron2d);
         scene3D.remove(octahedron3d);
 
-        const queryPoint2d = data['2d_embedding'];
         const queryPoint3d = data['3d_embedding'];
 
         const queryGeometry = new THREE.OctahedronGeometry(1);
         const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // red color (optional)
         
-        octahedron2d = new THREE.Mesh(queryGeometry, material);
         octahedron3d = new THREE.Mesh(queryGeometry, material);
 
-        octahedron2d.position.set(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
         octahedron3d.position.set(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale);
 
-        scene2D.add(octahedron2d);
         scene3D.add(octahedron3d);
-
-        //2D
-        camera2D.position.set(queryPoint2d[0] * scale, camera2D.position.y, queryPoint2d[1] * scale);
-        camera2D.lookAt(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale);
-
-        controls2D.target.set(queryPoint2d[0] * scale, 0, queryPoint2d[1] * scale); // Reset the target to the center or desired point.
-        controls2D.update();
 
         //3D
         camera3D.lookAt(queryPoint3d[0] * scale, queryPoint3d[1] * scale, queryPoint3d[2] * scale);
@@ -961,8 +682,6 @@ document.addEventListener("keydown", function(event) {
   
       hoveredIndices = [];  // Reset indices each time 'q' is pressed
   
-      // Determine if we're in 3D or 2D context
-      if (cursorIn3D) {
           // Add all points covered by the rollOverMesh3D
           for (let i = 0; i < mesh3D.count; i++) {
             const matrix = new THREE.Matrix4();
@@ -976,29 +695,13 @@ document.addEventListener("keydown", function(event) {
               hoveredIndices.push(i); // Add index of the covered point
             }
         }
-      } else {
-        raycaster2D.setFromCamera(mouse, camera2D);
-          // Add all points covered by the rollOverMesh2D
-          for (let i = 0; i < mesh2D.count; i++) {
-            const matrix = new THREE.Matrix4();
-            mesh2D.getMatrixAt(i, matrix);
-  
-            const position = new THREE.Vector3();
-            position.setFromMatrixPosition(matrix);
-  
-            // Check if the point is within the radius of the rollOverMesh
-            if (position.distanceTo(rollOverMesh2D.position) < rollOverMesh2D.scale.x) {
-              hoveredIndices.push(i); // Add index of the covered point
-            }
-        }
       }
   
       hoveredIndices.forEach((index) => {
-        // const objectName = data2d[index]["file_reference"].replace(".upload", "");  // You should define this function or have a list of object names.
-        const objectName = data2d[index].preview;
+        const objectName = data3d[index].preview;
         let color = new THREE.Color();
 
-        mesh2D.getColorAt(index, color);
+        mesh3D.getColorAt(index, color);
 
         loadMinioData(minioBucket, objectName)
           .then((data) => {
@@ -1020,13 +723,10 @@ document.addEventListener("keydown", function(event) {
                 
               const new_color = new THREE.Color()
               mesh3D.setColorAt( originalIndex, new_color.setHex( paintColor ) );
-              mesh2D.setColorAt( originalIndex, new_color.setHex( paintColor ) );
 
               data3d[originalIndex]['cluster_id'] = activeLabel;
-              data2d[originalIndex]['cluster_id'] = activeLabel;
 
               mesh3D.instanceColor.needsUpdate = true;
-              mesh2D.instanceColor.needsUpdate = true;
             });
               const panelContent = document.getElementById('panel-content');
               panelContent.appendChild(newElement);
@@ -1049,13 +749,10 @@ document.addEventListener("keydown", function(event) {
 
                     const new_color = new THREE.Color();
                     mesh3D.setColorAt(originalIndex, new_color.setHex(paintColor));
-                    mesh2D.setColorAt(originalIndex, new_color.setHex(paintColor));
 
                     data3d[originalIndex]['cluster_id'] = activeLabel;
-                    data2d[originalIndex]['cluster_id'] = activeLabel;
 
                     mesh3D.instanceColor.needsUpdate = true;
-                    mesh2D.instanceColor.needsUpdate = true;
               });
                 const panelContent = document.getElementById('panel-content');
                 panelContent.appendChild(newElement);
@@ -1065,7 +762,6 @@ document.addEventListener("keydown", function(event) {
             console.error('Error loading MinIO data:', error);
           });
       });
-    }
   });
 
   // Resizing

@@ -16,3 +16,4 @@ model_repository/
 /model_repository/
 __pycache__
 /inference_requests.py
+.DS_Store

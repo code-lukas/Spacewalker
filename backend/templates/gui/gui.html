@@ -61,62 +61,6 @@ button:hover {
   right: 10px;
 }
 
-#slider {
-  cursor: ew-resize;
-  opacity: .7;
-  background-color: #52b788;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  position: absolute;
-  top: calc(50% + 300px);
-  left: calc(25% - 20px);
-}
-
-#slider-line {
-  z-index: 1;
-  background-color: #fff;
-  width: 2px;
-  height: 100%;
-  position: absolute;
-  top: 0;
-  left: calc(25% - 1px);
-}
-
-#text2d {
-  color: #000;
-  text-align: center;
-  text-transform: uppercase;
-  background-color: #f2f2f2;
-  border-radius: 4px;
-  padding: 8px 16px;
-  font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;
-  font-size: 20px;
-  font-weight: bold;
-  position: absolute;
-  top: calc(50% + 40px);
-  left: 5%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 2px 4px #0000001a;
-}
-
-#text3d {
-  color: #000;
-  text-align: center;
-  text-transform: uppercase;
-  background-color: #f2f2f2;
-  border-radius: 4px;
-  padding: 8px 16px;
-  font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;
-  font-size: 20px;
-  font-weight: bold;
-  position: absolute;
-  top: calc(50% + 40px);
-  left: calc(5% + 80px);
-  transform: translate(-50%, -50%);
-  box-shadow: 0 2px 4px #0000001a;
-}
-
 body {
   margin: 0;
 }
@@ -191,13 +135,6 @@ body {
 </head>
 
 <body>
-    <div id="container">
-        <div id="slider" class="noselect"></div>
-        <button id="text2d" class="noselect">2D</button>
-        <button id="text3d" class="noselect">3D</button>
-    </div>
-
-        <!-- New input box at the bottom of the screen -->
     <div id="inputBox">
         <form id="inputForm">
             <input type="text" id="textInput" name="textInput" placeholder="Enter text here" class="noselect">

@@ -33,6 +33,7 @@ from ..services.minio_interface import MinioClient
 from .forms import ConfigurationForm, InferenceSettingsForm
 
 import logging
+import base64
 
 MAX_PROCESSES = 10
 SAMPLE_N_FRAMES_VIDEO = 10
@@ -155,9 +156,45 @@ class guiView(Connector, TemplateView):
 
     @method_decorator(requires_csrf_token)
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-
         if 'requestType' in request.POST:
-            # can't use both image and text
+            # Handle MinIO data request
+            if request.POST.get('requestType') == 'minio_data':
+                try:
+                    bucket_name = request.POST.get('bucket')
+                    object_name = request.POST.get('object')
+                    
+                    # Get object directly from MinIO
+                    response = self.minio_client.client.get_object(
+                        bucket_name=bucket_name,
+                        object_name=object_name
+                    )
+                    
+                    # Read the data
+                    file_data = response.read()
+                    
+                    # Determine content type and prepare response
+                    if object_name.endswith(('.png', '.jpg', '.jpeg')):
+                        content_type = 'image/png'
+                        response_data = {
+                            'type': 'image',
+                            'content': f'data:image/png;base64,{base64.b64encode(file_data).decode()}',
+                            'content_type': content_type
+                        }
+                    elif object_name.endswith('.txt'):
+                        content_type = 'text/plain'
+                        response_data = {
+                            'type': 'text',
+                            'content': file_data.decode('utf-8'),
+                            'content_type': content_type
+                        }
+                    else:
+                        return HttpResponse(status=400, content='Unsupported file type')
+                        
+                    return JsonResponse(response_data)
+                except Exception as e:
+                    return HttpResponse(status=500, content=str(e))
+            
+            # Handle existing request types
             if (len(request.FILES) != 0) and ('textInput' in request.POST):
                 return HttpResponse(500)
 
