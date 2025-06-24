@@ -1234,37 +1234,25 @@ function showTooltip(mouse_position, instanceId) {
 }
 function loadMinioData(bucketName, objectName) {
     return new Promise((resolve, reject)=>{
-        minioClient.getObject(bucketName, objectName, function(err, dataStream) {
-            if (err) {
-                console.error(err);
-                reject(err);
-                return;
+        const csrfToken = document.getElementsByName("csrfmiddlewaretoken")[0].value;
+        const formData = new FormData();
+        formData.append("requestType", "minio_data");
+        formData.append("bucket", bucketName);
+        formData.append("object", objectName);
+        fetch("/gui/", {
+            method: "POST",
+            body: formData,
+            headers: {
+                "X-CSRFToken": csrfToken
             }
-            let chunks = [];
-            dataStream.on("data", function(chunk) {
-                chunks.push(chunk);
-            });
-            dataStream.on("end", function() {
-                let fileData = Buffer.concat(chunks);
-                if (objectName.endsWith(".png") || objectName.endsWith(".jpg") || objectName.endsWith(".jpeg")) {
-                    let base64Image = fileData.toString("base64");
-                    let dataUrl = "data:image/png;base64," + base64Image;
-                    resolve({
-                        type: "image",
-                        content: dataUrl
-                    });
-                } else if (objectName.endsWith(".txt")) {
-                    let textContent = fileData.toString("utf8");
-                    resolve({
-                        type: "text",
-                        content: textContent
-                    });
-                } else reject(new Error("Unsupported file type"));
-            });
-            dataStream.on("error", function(err) {
-                console.error(err);
-                reject(err);
-            });
+        }).then((response)=>{
+            if (!response.ok) throw new Error("Network response was not ok");
+            return response.json();
+        }).then((data)=>{
+            resolve(data);
+        }).catch((error)=>{
+            console.error("Error loading MinIO data:", error);
+            reject(error);
         });
     });
 }
