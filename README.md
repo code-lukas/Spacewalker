@@ -80,6 +80,27 @@ docker compose -f docker-compose.yml -f docker-compose-develop.yml up --remove-o
    ```bash
    npx parcel ./src/index.html --dist-dir=/workspaces/SpaceWalker/backend/static/frontend
    ```
+## Data Input Formats
+
+### Video  
+- **Formats:** `.mp4`, `.mov`, `.avi`, `.mkv`  
+- **Description:** Each file represents a single video sample.  
+
+### Image  
+- **Formats:** `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.webp`  
+- **Description:** Each file represents a single image sample.  
+
+### Text  
+- **Format:** `.csv`  
+- **Structure:** Two columns — `Id` and `Text`  
+- **Example:**
+  ```csv
+  Id,Text
+  1,I have bought several of the Vitality canned dog food products and have found them all to be of good quality.
+  2,"Product arrived labeled as Jumbo Salted Peanuts...the peanuts were actually small sized unsalted."
+  3,"This is a confection that has been around a few centuries. It is a light, pillowy citrus gelatin with nuts..."
+
+
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
